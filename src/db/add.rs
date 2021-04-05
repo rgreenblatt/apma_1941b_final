@@ -111,7 +111,7 @@ pub fn events<'a>(
 }
 
 /// "to" is what the "from" repo is depending on
-pub fn add_dependencies(
+pub fn dependencies(
   conn: &PgConnection,
   from: NewRepo,
   to: &[NewRepo],
@@ -167,7 +167,7 @@ fn expected_repos(n: i32) -> Vec<Repo> {
 }
 
 #[test]
-fn add_n_events() -> Result<(), Box<dyn Error>> {
+fn n_events() -> Result<(), Box<dyn Error>> {
   for &n in &[1, 3, 8] {
     let ctx = TestContext::new("add_n_events");
     let conn = ctx.conn();
@@ -243,7 +243,7 @@ fn repos_as_set(repos: &[Repo]) -> HashSet<String> {
 }
 
 #[test]
-fn add_dup_event() -> Result<(), Box<dyn Error>> {
+fn dup_event() -> Result<(), Box<dyn Error>> {
   let ctx = TestContext::new("add_dup_events");
   let conn = ctx.conn();
 
