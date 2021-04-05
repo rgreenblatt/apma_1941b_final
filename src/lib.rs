@@ -3,8 +3,6 @@
 extern crate diesel_migrations;
 #[macro_use]
 extern crate diesel;
-#[macro_use]
-extern crate graphql_client;
 
 pub mod db;
 pub mod github_api;
