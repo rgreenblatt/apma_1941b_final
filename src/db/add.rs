@@ -18,8 +18,6 @@ use std::{collections::HashSet, error::Error};
 
 const USERS_LOGIN_UNIQUE: &'static str = "users_login_unique";
 const REPOS_OWNER_NAME_UNIQUE: &'static str = "repos_owner_name_unique";
-// const DEPENDENCIES_FROM_TO_UNIQUE: &'static str =
-//   "dependencies_from_to_unique";
 const CONTRIBUTIONS_REPO_USER_UNIQUE: &'static str =
   "contributions_repo_user_unique";
 
