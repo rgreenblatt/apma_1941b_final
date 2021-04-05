@@ -20,16 +20,6 @@ pub struct NewUser<'a> {
   pub login: &'a str,
 }
 
-impl<'a> NewUser<'a> {
-  #[cfg(test)]
-  pub(super) fn expected(&self, id: i32) -> User {
-    User {
-      id,
-      login: self.login.to_owned(),
-    }
-  }
-}
-
 struct OwnerName<'a> {
   owner: &'a str,
   name: &'a str,
@@ -76,14 +66,6 @@ pub struct NewRepo<'a> {
 }
 
 impl<'a> NewRepo<'a> {
-  #[cfg(test)]
-  pub(super) fn expected(self, id: i32) -> Repo {
-    Repo {
-      id,
-      owner_name: self.owner_name.to_owned(),
-    }
-  }
-
   pub fn owner(self) -> &'a str {
     OwnerName::new(self.owner_name).owner
   }
@@ -123,18 +105,6 @@ pub(super) struct NewContribution {
   pub(super) num: i32,
 }
 
-impl NewContribution {
-  #[cfg(test)]
-  pub(super) fn expected(&self, id: i32) -> Contribution {
-    Contribution {
-      id,
-      repo_id: self.repo_id,
-      user_id: self.user_id,
-      num: self.num,
-    }
-  }
-}
-
 #[derive(
   Identifiable, Queryable, Associations, PartialEq, Debug, Clone, Copy,
 )]
@@ -151,15 +121,4 @@ pub(super) struct Dependency {
 pub(super) struct NewDepencency {
   pub(super) repo_from_id: i32,
   pub(super) repo_to_id: i32,
-}
-
-impl NewDepencency {
-  #[cfg(test)]
-  pub(super) fn expected(&self, id: i32) -> Dependency {
-    Dependency {
-      id,
-      repo_to_id: self.repo_to_id,
-      repo_from_id: self.repo_from_id,
-    }
-  }
 }
