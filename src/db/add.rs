@@ -1,5 +1,8 @@
 #[cfg(test)]
-use super::{models::Contribution, TestContext};
+use super::{
+  models::{Contribution, Dependency},
+  TestContext,
+};
 use super::{
   models::{NewContribution, NewDepencency, NewRepo, NewUser, Repo, User},
   schema::{
@@ -362,6 +365,39 @@ fn dup_event() -> Result<(), Box<dyn Error>> {
       );
     }
   }
+
+  Ok(())
+}
+
+#[test]
+fn simple_dependencies() -> Result<(), Box<dyn Error>> {
+  let ctx = TestContext::new("add_simple_dependencies");
+  let conn = ctx.conn();
+
+  let repos_owned = expected_repos(4);
+  let repos = repos_owned.iter().map(|repo| repo.to_new()).collect_vec();
+
+  diesel::insert_into(repo_dsl::repos)
+    .values(&repos)
+    .execute(conn)?;
+
+  dependencies(conn, &repos_owned[2], &repos[0..2])?;
+
+  let depends = depends_dsl::dependencies.load::<Dependency>(conn)?;
+
+  assert_eq!(depends.len(), 2);
+  assert_eq!(depends[0].repo_from_id, repos_owned[2].id);
+  assert_eq!(depends[1].repo_from_id, repos_owned[2].id);
+  assert_eq!(depends[0].repo_to_id, repos_owned[0].id);
+  assert_eq!(depends[1].repo_to_id, repos_owned[1].id);
+
+  dependencies(conn, &repos_owned[1], &repos[2..3])?;
+
+  let depends = depends_dsl::dependencies.load::<Dependency>(conn)?;
+
+  assert_eq!(depends.len(), 3);
+  assert_eq!(depends[2].repo_from_id, repos_owned[1].id);
+  assert_eq!(depends[2].repo_to_id, repos_owned[2].id);
 
   Ok(())
 }
