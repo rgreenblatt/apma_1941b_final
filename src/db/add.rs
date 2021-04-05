@@ -46,10 +46,10 @@ fn dedup_with_ordering<T: Ord + Clone>(values: &[T]) -> (Vec<T>, Vec<usize>) {
   (deduped, ordering)
 }
 
-pub fn events<'a>(
+pub fn events(
   conn: &PgConnection,
-  event_users: &[NewUser<'a>],
-  event_repos: &[NewRepo<'a>],
+  event_users: &[NewUser],
+  event_repos: &[NewRepo],
 ) -> Result<(), diesel::result::Error> {
   assert_eq!(event_users.len(), event_repos.len());
 
@@ -113,11 +113,11 @@ pub fn events<'a>(
 /// "to" is what the "from" repo is depending on
 pub fn dependencies(
   conn: &PgConnection,
-  from: NewRepo,
+  from: &Repo,
   to: &[NewRepo],
 ) -> Result<(), diesel::result::Error> {
-  let names = std::iter::once(&from)
-    .chain(to)
+  let names = to
+    .iter()
     .map(|NewRepo { owner_name }| *owner_name)
     .collect_vec();
 
@@ -128,13 +128,12 @@ pub fn dependencies(
     .map(|Repo { id, owner_name }| (owner_name, id))
     .collect();
 
-  assert_eq!(owner_name_to_id.len(), to.len() + 1);
+  assert_eq!(owner_name_to_id.len(), to.len());
 
-  let repo_from_id = *owner_name_to_id.get(from.owner_name).unwrap();
   let new_dependencies = to
     .iter()
     .map(|NewRepo { owner_name }| NewDepencency {
-      repo_from_id,
+      repo_from_id: from.id,
       repo_to_id: *owner_name_to_id.get(*owner_name).unwrap(),
     })
     .collect_vec();

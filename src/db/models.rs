@@ -66,6 +66,11 @@ pub struct NewRepo<'a> {
 }
 
 impl<'a> NewRepo<'a> {
+  pub fn new(owner_name: &'a str) -> Self {
+    assert_eq!(owner_name.matches('/').count(), 1);
+    Self { owner_name }
+  }
+
   pub fn owner(self) -> &'a str {
     OwnerName::new(self.owner_name).owner
   }
