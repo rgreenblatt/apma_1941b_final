@@ -414,8 +414,8 @@ fn many_dependencies() -> Result<()> {
   )
 }
 
-// NOTE: the exact numbers on this test aren't important (this might
-// changes as packages are shifted around etc...)
+// NOTE: the exact numbers on this test aren't important (this might change as
+// packages are shifted around etc...)
 #[test]
 fn many_pages_of_dependencies() -> Result<()> {
   gen_test(
@@ -436,8 +436,8 @@ fn many_manifests() -> Result<()> {
   Ok(())
 }
 
-// NOTE: the exact numbers on this test aren't important (this might
-// changes as packages are shifted around etc...)
+// NOTE: the exact numbers on this test aren't important (this might change as
+// packages are shifted around etc...)
 #[test]
 fn many_pages_of_everything() -> Result<()> {
   gen_test(
