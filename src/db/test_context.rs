@@ -1,6 +1,4 @@
 use diesel::{pg::PgConnection, prelude::*};
-use dotenv::dotenv;
-use std::env;
 
 embed_migrations!("migrations/");
 
@@ -24,10 +22,10 @@ impl TestContextInner {
 
 impl TestContext {
   pub fn new(db_name: &str) -> TestContext {
-    dotenv().ok();
+    dotenv::dotenv().ok();
 
     let base_url =
-      env::var("BASE_TEST_URL").expect("BASE_TEST_URL must be set");
+      std::env::var("BASE_TEST_URL").expect("BASE_TEST_URL must be set");
 
     let inner = TestContextInner {
       base_url,

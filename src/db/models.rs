@@ -1,4 +1,5 @@
 use super::schema::{contributions, dependencies, repos, users};
+use crate::RepoOwnerName;
 
 #[derive(Identifiable, Queryable, PartialEq, Debug, Clone)]
 #[table_name = "users"]
@@ -20,21 +21,6 @@ pub struct NewUser<'a> {
   pub login: &'a str,
 }
 
-struct OwnerName<'a> {
-  owner: &'a str,
-  name: &'a str,
-}
-
-impl<'a> OwnerName<'a> {
-  fn new(owner_name: &'a str) -> Self {
-    let mut iter = owner_name.splitn(2, '/');
-    let owner = iter.next().unwrap();
-    let name = iter.next().unwrap();
-
-    Self { owner, name }
-  }
-}
-
 #[derive(Identifiable, Queryable, PartialEq, Debug, Clone)]
 #[table_name = "repos"]
 pub struct Repo {
@@ -50,12 +36,16 @@ impl Repo {
     }
   }
 
+  pub fn as_repo(self) -> crate::Repo {
+    crate::Repo::try_new(self.owner_name).unwrap()
+  }
+
   pub fn owner(&self) -> &str {
-    OwnerName::new(&self.owner_name).owner
+    RepoOwnerName::new(&self.owner_name).owner
   }
 
   pub fn name(&self) -> &str {
-    OwnerName::new(&self.owner_name).name
+    RepoOwnerName::new(&self.owner_name).name
   }
 }
 
@@ -72,11 +62,11 @@ impl<'a> NewRepo<'a> {
   }
 
   pub fn owner(self) -> &'a str {
-    OwnerName::new(self.owner_name).owner
+    RepoOwnerName::new(self.owner_name).owner
   }
 
   pub fn name(self) -> &'a str {
-    OwnerName::new(self.owner_name).name
+    RepoOwnerName::new(self.owner_name).name
   }
 }
 
