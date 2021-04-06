@@ -49,12 +49,14 @@ fn dedup_with_ordering<T: Ord + Clone>(values: &[T]) -> (Vec<T>, Vec<usize>) {
   (deduped, ordering)
 }
 
-pub fn events(
+pub fn events_counts(
   conn: &PgConnection,
   event_users: &[NewUser],
   event_repos: &[NewRepo],
+  counts: &[i32],
 ) -> Result<(), diesel::result::Error> {
   assert_eq!(event_users.len(), event_repos.len());
+  assert_eq!(event_users.len(), counts.len());
 
   let (deduped_new_users, deduped_users_idxs) =
     dedup_with_ordering(event_users);
@@ -81,23 +83,51 @@ pub fn events(
   assert_eq!(deduped_users.len(), deduped_new_users.len());
   assert_eq!(deduped_repos.len(), deduped_new_repos.len());
 
-  let mut idxs: Vec<_> = deduped_users_idxs
+  let mut idxs_counts: Vec<_> = deduped_users_idxs
     .iter()
     .zip(&deduped_repos_idxs)
-    .map(|(&user_idx, &repo_idx)| {
-      (deduped_users[user_idx].id, deduped_repos[repo_idx].id)
+    .zip(counts)
+    .map(|((&user_idx, &repo_idx), &count)| {
+      (
+        deduped_users[user_idx].id,
+        deduped_repos[repo_idx].id,
+        count,
+      )
     })
     .collect();
-  idxs.sort();
-  let new_contributions: Vec<_> = idxs
-    .iter()
-    .dedup_with_count()
-    .map(|(count, &(user_id, repo_id))| NewContribution {
+  idxs_counts
+    .sort_unstable_by_key(|(user_id, repo_id, _)| (*user_id, *repo_id));
+
+  let mut new_contributions = Vec::new();
+  let mut last = None;
+
+  for item in idxs_counts {
+    let (user_id_new, repo_id_new, count_new) = item;
+    match last {
+      Some((user_id, repo_id, count)) => {
+        if (user_id, repo_id) == (user_id_new, repo_id_new) {
+          last = Some((user_id, repo_id, count + count_new));
+          continue;
+        }
+
+        new_contributions.push(NewContribution {
+          user_id,
+          repo_id,
+          num: count as i32,
+        });
+      }
+      None => {}
+    }
+    last = Some(item);
+  }
+
+  if let Some((user_id, repo_id, count)) = last {
+    new_contributions.push(NewContribution {
       user_id,
       repo_id,
       num: count as i32,
-    })
-    .collect();
+    });
+  }
 
   diesel::insert_into(contrib_dsl::contributions)
     .values(new_contributions)
@@ -111,6 +141,14 @@ pub fn events(
     .execute(conn)?;
 
   Ok(())
+}
+
+pub fn events(
+  conn: &PgConnection,
+  event_users: &[NewUser],
+  event_repos: &[NewRepo],
+) -> Result<(), diesel::result::Error> {
+  events_counts(conn, event_users, event_repos, &vec![1; event_repos.len()])
 }
 
 /// "to" is what the "from" repo is depending on
@@ -183,7 +221,9 @@ fn n_events() -> Result<(), Box<dyn Error>> {
     let event_repos: Vec<_> =
       event_repos_expected.iter().map(|v| v.to_new()).collect();
 
-    events(conn, &event_users, &event_repos)?;
+    let counts = (0..n as i32).collect_vec();
+
+    events_counts(conn, &event_users, &event_repos, &counts)?;
     let (users, repos, contributions): (
       Vec<User>,
       Vec<Repo>,
@@ -202,19 +242,22 @@ fn n_events() -> Result<(), Box<dyn Error>> {
     assert_eq!(repos, event_repos_expected);
     for (
       i,
-      Contribution {
-        id,
-        repo_id,
-        user_id,
-        num,
-      },
-    ) in contributions.iter().enumerate()
+      (
+        Contribution {
+          id,
+          repo_id,
+          user_id,
+          num,
+        },
+        count,
+      ),
+    ) in contributions.iter().zip(counts).enumerate()
     {
       let expected_id = i as i32 + 1;
       assert_eq!(*id, expected_id);
       assert_eq!(*repo_id, expected_id);
       assert_eq!(*user_id, expected_id);
-      assert_eq!(*num, 1);
+      assert_eq!(*num, count);
     }
   }
 
@@ -261,6 +304,7 @@ fn dup_event() -> Result<(), Box<dyn Error>> {
   struct Test {
     user_event_ordering: Vec<usize>,
     repo_event_ordering: Vec<usize>,
+    repo_event_counts: Vec<i32>,
     expected_contributions: Vec<(usize, usize, i32)>,
     expected_users: Vec<usize>,
     expected_repos: Vec<usize>,
@@ -270,12 +314,13 @@ fn dup_event() -> Result<(), Box<dyn Error>> {
     Test {
       user_event_ordering: vec![0, 0, 1, 0, 1, 1, 1, 0],
       repo_event_ordering: vec![0, 1, 0, 0, 1, 0, 0, 2],
+      repo_event_counts: vec![5, 1, 0, 1, 0, 1, 1, 3],
       expected_contributions: vec![
-        (0, 0, 2),
+        (0, 0, 6),
         (0, 1, 1),
-        (1, 0, 3),
-        (1, 1, 1),
-        (0, 2, 1),
+        (1, 0, 2),
+        (1, 1, 0),
+        (0, 2, 3),
       ],
       expected_users: vec![0, 1],
       expected_repos: vec![0, 1, 2],
@@ -283,12 +328,13 @@ fn dup_event() -> Result<(), Box<dyn Error>> {
     Test {
       user_event_ordering: vec![0, 2, 0, 1, 1, 1, 0],
       repo_event_ordering: vec![0, 1, 0, 1, 0, 0, 2],
+      repo_event_counts: vec![1, 1, 1, 1, 1, 1, 1, 1],
       expected_contributions: vec![
-        (0, 0, 4),
+        (0, 0, 8),
         (0, 1, 1),
-        (1, 0, 5),
-        (1, 1, 2),
-        (0, 2, 2),
+        (1, 0, 4),
+        (1, 1, 1),
+        (0, 2, 4),
         (2, 1, 1),
       ],
       expected_users: vec![0, 1, 2],
@@ -299,6 +345,7 @@ fn dup_event() -> Result<(), Box<dyn Error>> {
   for Test {
     user_event_ordering,
     repo_event_ordering,
+    repo_event_counts,
     expected_contributions,
     expected_users,
     expected_repos,
@@ -309,7 +356,7 @@ fn dup_event() -> Result<(), Box<dyn Error>> {
     let event_repos: Vec<_> =
       permute_clone(&overall_new_repos, &repo_event_ordering);
 
-    events(conn, &event_users, &event_repos)?;
+    events_counts(conn, &event_users, &event_repos, &repo_event_counts)?;
 
     let (users, repos, contributions): (
       Vec<User>,
