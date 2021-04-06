@@ -86,7 +86,6 @@ impl DependencyIterator {
       Self::after_count(&self.manifests_after);
     let (submodules_after, submodules_count) =
       Self::after_count(&self.submodules_after);
-    dbg!(&self);
     let q = RepoDependencies::build_query(repo_dependencies::Variables {
       manifests_after,
       manifests_count,
