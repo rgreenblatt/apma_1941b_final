@@ -18,14 +18,14 @@ table! {
 table! {
     repos (id) {
         id -> Int4,
-        owner_name -> Varchar,
+        github_id -> Int4,
     }
 }
 
 table! {
     users (id) {
         id -> Int4,
-        login -> Varchar,
+        github_id -> Int4,
     }
 }
 

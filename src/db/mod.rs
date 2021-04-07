@@ -8,6 +8,8 @@ use diesel::{pg::PgConnection, prelude::*};
 use dotenv::dotenv;
 use std::env;
 
+use crate::github_api::ID as GithubID;
+
 #[cfg(test)]
 use test_context::TestContext;
 
@@ -23,7 +25,7 @@ pub fn establish_connection() -> PgConnection {
 pub fn get_repos(
   conn: &PgConnection,
   limit: Option<i64>,
-) -> diesel::QueryResult<Vec<models::Repo>> {
+) -> diesel::QueryResult<Vec<models::RepoEntry>> {
   match limit {
     Some(limit) => schema::repos::table.limit(limit).load(conn),
     None => schema::repos::table.load(conn),

@@ -1,13 +1,11 @@
 use flate2::read::GzDecoder;
-use github_net::db;
+use github_net::{db, github_api, Repo, User};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::{
   fs::File,
   io::{prelude::*, BufReader},
   path::PathBuf,
-  sync::{mpsc::sync_channel, Arc, Mutex},
-  thread,
 };
 use structopt::StructOpt;
 
@@ -17,129 +15,141 @@ use structopt::StructOpt;
   about = "fill the database (postgres) from .json.gz files"
 )]
 struct Opt {
-  /// Input file
   #[structopt(parse(from_os_str))]
-  input_list_file: PathBuf,
+  user_csv_list: PathBuf,
+
+  #[structopt(parse(from_os_str))]
+  repo_csv_list: PathBuf,
+
+  #[structopt(parse(from_os_str))]
+  contribution_csv_list: PathBuf,
 }
 
-#[derive(Debug, Deserialize)]
-struct CsvEntry {
-  repo_name: String,
-  login: String,
-  cnt: i32,
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct UserCsvEntry {
+  github_id: github_api::ID,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct RepoCsvEntry {
+  github_id: github_api::ID,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct ContributionCsvEntry {
+  user_github_id: github_api::ID,
+  repo_github_id: github_api::ID,
+  num: i32,
+}
+
+pub fn add_items<T, F>(list: PathBuf, f: F) -> anyhow::Result<()>
+where
+  T: for<'a> Deserialize<'a>,
+  F: Fn(&diesel::PgConnection, &[T]) -> anyhow::Result<()>,
+{
+  let user_reader = BufReader::new(File::open(list)?);
+  let lines = user_reader.lines().collect::<Result<Vec<_>, _>>()?;
+  let bar = ProgressBar::new(!0);
+  bar.set_style(
+    ProgressStyle::default_bar()
+      .template("[{elapsed_precise}] {pos} {per_sec}"),
+  );
+
+  let conn = db::establish_connection();
+
+  let mut new_items = Vec::new();
+
+  for line in lines {
+    let mut csv_reader = csv::Reader::from_reader(GzDecoder::new(
+      BufReader::new(File::open(line)?),
+    ));
+
+    let add_items = |new_items: &mut Vec<T>| -> anyhow::Result<()> {
+      f(&conn, new_items)?;
+
+      bar.inc(new_items.len() as u64);
+
+      new_items.clear();
+
+      Ok(())
+    };
+
+    for record in csv_reader.deserialize() {
+      new_items.push(record?);
+
+      if new_items.len() >= 2usize.pow(14) {
+        add_items(&mut new_items)?;
+      }
+    }
+    add_items(&mut new_items)?;
+  }
+
+  Ok(())
 }
 
 pub fn main() -> anyhow::Result<()> {
   let opt = Opt::from_args();
 
-  let reader = BufReader::new(File::open(opt.input_list_file)?);
-  let lines = reader.lines().collect::<Result<Vec<_>, _>>()?;
-  let bar = ProgressBar::new(479216150);
-  bar.set_style(ProgressStyle::default_bar().template(
-    "[{elapsed_precise}] {bar} {pos} / {len} {eta_precise} {per_sec}",
-  ));
-  let bar = Arc::new(Mutex::new(bar));
-  let lines = Arc::new(Mutex::new(lines));
+  println!("adding users");
 
-  let mut children = Vec::new();
+  add_items(
+    opt.user_csv_list,
+    |conn, user_csv_entries| -> anyhow::Result<()> {
+      let users: Vec<_> = user_csv_entries
+        .iter()
+        .cloned()
+        .map(|UserCsvEntry { github_id }| User { github_id })
+        .collect();
+      db::add::add_users(&conn, &users)?;
 
-  let (sender, reciever) = sync_channel(0);
+      Ok(())
+    },
+  )?;
 
-  let num_threads = 4;
+  println!("adding repos");
 
-  for _ in 0..num_threads {
-    let bar = bar.clone();
-    let lines = lines.clone();
-    let sender = sender.clone();
-    children.push(thread::spawn(move || {
-      let conn = db::establish_connection();
+  add_items(
+    opt.repo_csv_list,
+    |conn, repo_csv_entries| -> anyhow::Result<()> {
+      let repos: Vec<_> = repo_csv_entries
+        .iter()
+        .cloned()
+        .map(|RepoCsvEntry { github_id }| Repo { github_id })
+        .collect();
+      db::add::add_repos(&conn, &repos)?;
 
-      let mut logins_repos = Vec::new();
-      let mut counts = Vec::new();
-      loop {
-        let line = {
-          if let Some(line) = lines.lock().unwrap().pop() {
-            line
-          } else {
-            let _ = sender.send(Ok(()));
-            return;
-          }
-        };
+      Ok(())
+    },
+  )?;
 
-        let f = || -> anyhow::Result<()> {
-          // is the inner BufReader needed here?
-          let mut csv_reader = csv::Reader::from_reader(GzDecoder::new(
-            BufReader::new(File::open(line)?),
-          ));
+  println!("adding contributions");
 
-          let add_entries = |logins_repos: &mut Vec<(String, String)>,
-                             counts: &mut Vec<i32>|
-           -> anyhow::Result<()> {
-            let mut new_users = Vec::new();
-            let mut new_repos = Vec::new();
+  add_items(
+    opt.contribution_csv_list,
+    |conn,
+     contribution_csv_entries: &[ContributionCsvEntry]|
+     -> anyhow::Result<()> {
+      let users: Vec<_> = contribution_csv_entries
+        .iter()
+        .map(|entry| User {
+          github_id: entry.user_github_id,
+        })
+        .collect();
+      let repos: Vec<_> = contribution_csv_entries
+        .iter()
+        .map(|entry| Repo {
+          github_id: entry.repo_github_id,
+        })
+        .collect();
+      let counts: Vec<_> = contribution_csv_entries
+        .iter()
+        .map(|entry| entry.num)
+        .collect();
+      db::add::add_contributions(conn, &users, &repos, &counts)?;
 
-            for (repo, login) in logins_repos.iter() {
-              new_users.push(db::models::NewUser { login });
-              new_repos.push(db::models::NewRepo::new(repo));
-            }
-
-            db::add::events_counts(&conn, &new_users, &new_repos, counts)?;
-
-            bar.lock().unwrap().inc(new_users.len() as u64);
-
-            new_users.clear();
-            new_repos.clear();
-            logins_repos.clear();
-            counts.clear();
-
-            Ok(())
-          };
-
-          for record in csv_reader.deserialize() {
-            let CsvEntry {
-              repo_name,
-              login,
-              cnt,
-            } = record?;
-            let repo_name = if repo_name.matches('/').count() == 2 {
-              let mut iter = repo_name.split('/').skip(1);
-              iter.next().unwrap().to_owned() + "/" + iter.next().unwrap()
-            } else {
-              repo_name
-            };
-            logins_repos.push((repo_name, login));
-            counts.push(cnt);
-
-            if logins_repos.len() >= 2usize.pow(14) {
-              add_entries(&mut logins_repos, &mut counts)?;
-            }
-          }
-          add_entries(&mut logins_repos, &mut counts)?;
-
-          Ok(())
-        };
-
-        match f() {
-          Ok(()) => {}
-          Err(err) => {
-            let _ = sender.send(Err(err));
-            return;
-          }
-        }
-      }
-    }));
-  }
-
-  let mut num_exited = 0;
-
-  while num_exited < num_threads {
-    match reciever.recv().unwrap() {
-      Ok(()) => {
-        num_exited += 1;
-      }
-      Err(err) => return Err(err),
-    }
-  }
+      Ok(())
+    },
+  )?;
 
   Ok(())
 }
