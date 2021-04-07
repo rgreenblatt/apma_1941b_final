@@ -8,6 +8,10 @@ pub trait HasGithubID {
   fn get_github_id(&self) -> GithubID;
 }
 
+pub trait GithubIDWrapper: HasGithubID {
+  fn from_github_id(github_id: GithubID) -> Self;
+}
+
 #[derive(
   Identifiable,
   Queryable,
@@ -39,6 +43,18 @@ impl HasGithubID for UserEntry {
 #[table_name = "users"]
 pub struct User {
   pub github_id: GithubID,
+}
+
+impl HasGithubID for User {
+  fn get_github_id(&self) -> GithubID {
+    self.github_id
+  }
+}
+
+impl GithubIDWrapper for User {
+  fn from_github_id(github_id: GithubID) -> Self {
+    Self { github_id }
+  }
 }
 
 impl From<UserEntry> for User {
@@ -80,6 +96,18 @@ impl HasGithubID for RepoEntry {
 #[table_name = "repos"]
 pub struct Repo {
   pub github_id: GithubID,
+}
+
+impl HasGithubID for Repo {
+  fn get_github_id(&self) -> GithubID {
+    self.github_id
+  }
+}
+
+impl GithubIDWrapper for Repo {
+  fn from_github_id(github_id: GithubID) -> Self {
+    Self { github_id }
+  }
 }
 
 impl From<RepoEntry> for Repo {

@@ -9,6 +9,8 @@ query RepoDependencies(
   nodes(ids: $ids) {
     __typename
     ... on Repository {
+      id
+
       dependencyGraphManifests(
         first: $manifestsCount
         after: $manifestsAfter
@@ -27,7 +29,7 @@ query RepoDependencies(
             nodes {
               packageManager
               repository {
-                nameWithOwner
+                id
               }
             }
           }

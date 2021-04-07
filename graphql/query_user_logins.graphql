@@ -1,0 +1,8 @@
+query UserLogins($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    __typename
+    ... on User {
+      login
+    }
+  }
+}

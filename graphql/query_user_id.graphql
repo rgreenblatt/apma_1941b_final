@@ -1,0 +1,5 @@
+query UserID($login: String!) {
+  user(login: $login) {
+    id
+  }
+}

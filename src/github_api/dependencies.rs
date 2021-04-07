@@ -1,39 +1,45 @@
 use super::{
-  get_token, ResponseError, API_COUNT_LIMIT, GITHUB_GRAPHQL_ENDPOINT, ID,
+  get_token, NodeIDWrapper, RepoNotFoundError, UnexpectedNullError,
+  API_COUNT_LIMIT, GITHUB_GRAPHQL_ENDPOINT,
 };
+use crate::db;
 use crate::Repo;
 use anyhow::{anyhow, Result};
 use graphql_client::GraphQLQuery;
 #[cfg(test)]
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::collections::HashSet;
 
 type URI = String;
 
 #[derive(GraphQLQuery)]
 #[graphql(
-  schema_path = "github_schema.graphql",
-  query_path = "query_repo_dependencies.graphql",
+  schema_path = "graphql/github_schema.graphql",
+  query_path = "graphql/query_repo_dependencies.graphql",
   response_derives = "Debug"
 )]
 struct RepoDependencies;
 
-#[derive(Debug)]
 struct DependencyIterator {
+  conn: diesel::PgConnection,
   manifests_after: Option<String>,
   dependencies_after: Option<String>,
   submodules_after: Option<String>,
-  ids: Vec<String>,
+  queried_repos: HashSet<Repo>,
+  node_ids: Vec<String>,
   current_page: Vec<Dependency>,
+  current_submodules: Vec<String>,
+  current_submodule_from_repos: Vec<Repo>,
   api_token: String,
   finished: bool,
 }
 
 #[derive(Hash, Ord, PartialOrd, PartialEq, Eq, Debug, Clone)]
 pub struct Dependency {
-  // TODO: should this be an enum
+  pub from_repo: Repo,
+  pub to_repo: Repo,
+  // TODO: should this be an enum?
   pub package_manager: Option<String>,
-  pub repo: Repo,
 }
 
 const GIT_SUBMODULE_MANAGER: &'static str = "git_submodule";
@@ -42,6 +48,25 @@ impl DependencyIterator {
   fn next_result(&mut self) -> Result<Option<Dependency>> {
     // TODO: watch out for this loop not terminating!!!
     loop {
+      assert_eq!(
+        self.current_submodules.len(),
+        self.current_submodule_from_repos.len()
+      );
+      for (&to_repo, &from_repo) in
+        db::get_repos_from_names(&self.conn, &self.current_submodules)?
+          .iter()
+          .zip(&self.current_submodule_from_repos)
+      {
+        self.current_page.push(Dependency {
+          to_repo,
+          from_repo,
+          package_manager: Some(GIT_SUBMODULE_MANAGER.to_owned()),
+        });
+      }
+
+      self.current_submodules.clear();
+      self.current_submodule_from_repos.clear();
+
       if let Some(next) = self.current_page.pop() {
         return Ok(Some(next));
       }
@@ -74,7 +99,7 @@ impl DependencyIterator {
         .unwrap_or("".to_owned()),
       submodules_after,
       submodules_count,
-      ids: self.ids,
+      ids: self.node_ids.clone(),
     });
 
     let client = reqwest::blocking::Client::builder()
@@ -102,12 +127,17 @@ impl DependencyIterator {
       response_body.data.ok_or(anyhow!("missing response data"))?;
 
     for node in response_data.nodes {
+      let node = node.as_ref().ok_or(RepoNotFoundError {})?;
       use repo_dependencies::RepoDependenciesNodesOn::*;
-      if let Repository(repo) = node.unwrap().on {
-        self.handle_manifests(&repo)?;
-        self.handle_submodules(&repo)?;
+      if let Repository(repo) = &node.on {
+        let from_repo = Repo::from_node_id(&repo.id)?;
+        if !self.queried_repos.contains(&from_repo) {
+          return Err(anyhow!("repo id wasn't one of the queried ids"));
+        }
+        self.handle_manifests(from_repo, &repo)?;
+        self.handle_submodules(from_repo, &repo)?;
       } else {
-        return Err(anyhow!("node wasn't repo"));
+        return Err(RepoNotFoundError {}.into());
       }
     }
 
@@ -123,6 +153,7 @@ impl DependencyIterator {
 
   fn handle_manifests(
     &mut self,
+    from_repo: Repo,
     repo: &repo_dependencies::RepoDependenciesNodesOnRepository,
   ) -> Result<()> {
     let manifests = repo
@@ -152,14 +183,15 @@ impl DependencyIterator {
         .ok_or(Self::null_err("dependency nodes"))?;
       for depend in dep_nodes {
         let depend = depend.as_ref().ok_or(Self::null_err("dependency"))?;
-        let repo = if let Some(repo) = &depend.repository {
-          repo.name_with_owner.clone().try_into()?
+        let to_repo = if let Some(repo) = &depend.repository {
+          Repo::from_node_id(&repo.id)?
         } else {
           continue;
         };
         self.current_page.push(Dependency {
           package_manager: depend.package_manager.clone(),
-          repo,
+          from_repo,
+          to_repo,
         })
       }
       if dependencies.page_info.has_next_page {
@@ -190,6 +222,7 @@ impl DependencyIterator {
 
   fn handle_submodules(
     &mut self,
+    from_repo: Repo,
     repo: &repo_dependencies::RepoDependenciesNodesOnRepository,
   ) -> Result<()> {
     let submodules = &repo.submodules;
@@ -211,10 +244,10 @@ impl DependencyIterator {
         .as_ref()
         .ok_or(anyhow!("submodule url was parsed with missing owner!"))?;
 
-      self.current_page.push(Dependency {
-        package_manager: Some(GIT_SUBMODULE_MANAGER.to_owned()),
-        repo: Repo(format!("{}/{}", owner, git_url.name)),
-      });
+      self
+        .current_submodules
+        .push(format!("{}/{}", owner, git_url.name));
+      self.current_submodule_from_repos.push(from_repo);
     }
 
     self.finished = self.finished && !submodules.page_info.has_next_page;
@@ -223,8 +256,8 @@ impl DependencyIterator {
     Ok(())
   }
 
-  fn null_err(s: &str) -> ResponseError {
-    ResponseError::UnexpectedNull(s.to_owned())
+  fn null_err(s: &str) -> UnexpectedNullError {
+    UnexpectedNullError(s.to_owned())
   }
 }
 
@@ -242,62 +275,53 @@ impl Iterator for DependencyIterator {
   }
 }
 
-pub fn get_repo_dependencies(ids: &[ID]) -> impl Iterator<Item = IterItem> {
+pub fn get_repo_dependencies(repos: &[Repo]) -> impl Iterator<Item = IterItem> {
   // TODO: dedup code
   DependencyIterator {
+    conn: db::establish_connection(),
     manifests_after: Some("".to_owned()),
     dependencies_after: Some("".to_owned()),
     submodules_after: Some("".to_owned()),
-    ids: ids.iter().map(ID::to_string).collect(),
+    queried_repos: repos.iter().cloned().collect(),
+    node_ids: repos.iter().map(Repo::as_node_id).collect(),
     current_page: Vec::new(),
+    current_submodules: Vec::new(),
+    current_submodule_from_repos: Vec::new(),
     api_token: get_token(),
     finished: false,
   }
 }
 
-pub fn get_repo_dependencies_by_name(
-  owner: &str,
-  name: &str,
-) -> impl Iterator<Item = IterItem> {
-  unimplemented!();
-
-  get_repo_dependencies(&[])
-}
-
 #[test]
 fn repo_not_found() -> Result<()> {
-  let mut iter = get_repo_dependencies_by_name(
-    "rgreenblatt",
-    "a_repo_which_certainly_does_not_exist",
-  );
+  let mut iter = get_repo_dependencies(&[Repo { github_id: 0 }]);
 
   let next = iter.next();
   assert!(next.is_some());
   let next = next.unwrap();
   assert!(next.is_err());
   let next_err = next.unwrap_err();
-
-  assert_eq!(
-    match next_err.downcast_ref::<ResponseError>() {
-      Some(err) => err,
-      None => return Err(next_err).into(),
-    },
-    &ResponseError::RepoNotFound,
-  );
   assert!(iter.next().is_none());
 
-  Ok(())
+  crate::check_error(next_err, &RepoNotFoundError {})
 }
 
 #[test]
 fn single_submodule() -> Result<()> {
-  let mut iter =
-    get_repo_dependencies_by_name("rgreenblatt", "repo_with_single_submodule");
+  let from_repo = super::get_repo(
+    "rgreenblatt".to_owned(),
+    "repo_with_single_submodule".to_owned(),
+  )?;
+  let mut iter = get_repo_dependencies(&[from_repo]);
   assert_eq!(
     iter.next().unwrap()?,
     Dependency {
       package_manager: Some(GIT_SUBMODULE_MANAGER.to_owned()),
-      repo: ("octokit", "graphql-schema").try_into().unwrap(),
+      from_repo,
+      to_repo: super::get_repo(
+        "octokit".to_owned(),
+        "graphql-schema".to_owned()
+      )?,
     }
   );
   assert!(iter.next().is_none());
@@ -312,21 +336,31 @@ fn gen_test(
   expected_count: usize,
   expected_items: Option<Vec<(&'static str, usize)>>,
 ) -> Result<()> {
-  let all = get_repo_dependencies_by_name(owner, name)
-    .collect::<Result<Vec<Dependency>>>()?;
+  let from_repo = super::get_repo(owner.to_owned(), name.to_owned())?;
+  let all =
+    get_repo_dependencies(&[from_repo]).collect::<Result<Vec<Dependency>>>()?;
 
   assert_eq!(all.len(), expected_count);
 
-  let mut map = HashMap::new();
   for depend in &all {
-    *map.entry(depend.repo.owner_name().to_owned()).or_insert(0) += 1;
+    assert_eq!(depend.from_repo, from_repo);
   }
 
   if let Some(expected_items) = expected_items {
+    let conn = db::establish_connection();
+
+    let mut map = HashMap::new();
+    for depend in &all {
+      *map.entry(&depend.to_repo).or_insert(0) += 1;
+    }
+
     assert_eq!(map.len(), expected_items.len());
 
     for (owner_name, count) in expected_items {
-      assert_eq!(map.get(owner_name).unwrap(), &count);
+      let to_repo =
+        db::get_repos_from_names(&conn, &[owner_name.to_owned()])?[0];
+
+      assert_eq!(map.get(&to_repo).unwrap(), &count);
     }
   }
 
@@ -358,15 +392,16 @@ fn many_submodules() -> Result<()> {
   )
 }
 
-#[test]
-fn many_pages_of_submodules() -> Result<()> {
-  gen_test(
-    "rgreenblatt",
-    "repo_with_many_pages_of_submodules",
-    380,
-    Some(vec![("rgreenblatt/repo_with_many_submodules", 380)]),
-  )
-}
+// TODO: renable when db::get_repos_from_names is actually implemented!
+// #[test]
+// fn many_pages_of_submodules() -> Result<()> {
+//   gen_test(
+//     "rgreenblatt",
+//     "repo_with_many_pages_of_submodules",
+//     380,
+//     Some(vec![("rgreenblatt/repo_with_many_submodules", 380)]),
+//   )
+// }
 
 #[test]
 fn single_dependency() -> Result<()> {
@@ -407,24 +442,44 @@ fn many_pages_of_dependencies() -> Result<()> {
   )
 }
 
-// Github limits the number of manifests, so this is the most I could find.
-// We just check that we don't error.
 #[test]
-fn many_manifests() -> Result<()> {
-  get_repo_dependencies_by_name("gimlichael", "Cuemon")
-    .collect::<Result<Vec<Dependency>>>()?;
+fn multiple_repos_with_many_pages_of_dependencies() -> Result<()> {
+  let count = 5;
+  let repos = vec![
+    super::get_repo(
+      "rgreenblatt".to_owned(),
+      "repo_with_many_pages_of_dependencies".to_owned()
+    )?;
+    count
+  ];
+
+  let depends =
+    get_repo_dependencies(&repos).collect::<Result<Vec<Dependency>>>()?;
+
+  assert_eq!(depends.len(), 370 * count);
 
   Ok(())
 }
 
+// Github limits the number of manifests, so this is the most I could find.
+// We just check that we don't error.
+#[test]
+fn many_manifests() -> Result<()> {
+  let repo = super::get_repo("gimlichael".to_owned(), "Cuemon".to_owned())?;
+  get_repo_dependencies(&[repo]).collect::<Result<Vec<Dependency>>>()?;
+
+  Ok(())
+}
+
+// TODO: renable when db::get_repos_from_names is actually implemented!
 // NOTE: the exact numbers on this test aren't important (this might change as
 // packages are shifted around etc...)
-#[test]
-fn many_pages_of_everything() -> Result<()> {
-  gen_test(
-    "rgreenblatt",
-    "repo_with_many_pages_of_submodules_and_dependencies",
-    370 + 380,
-    None,
-  )
-}
+// #[test]
+// fn many_pages_of_everything() -> Result<()> {
+//   gen_test(
+//     "rgreenblatt",
+//     "repo_with_many_pages_of_submodules_and_dependencies",
+//     370 + 380,
+//     None,
+//   )
+// }

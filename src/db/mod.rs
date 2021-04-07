@@ -39,3 +39,21 @@ pub fn counts(conn: &PgConnection) -> diesel::QueryResult<(i64, i64, i64)> {
     schema::users::table.count().first(conn)?,
   ))
 }
+
+pub fn get_repos_from_names(
+  conn: &PgConnection,
+  names: &[String],
+) -> anyhow::Result<Vec<models::Repo>> {
+  // TODO: fix this hack!
+  dbg!(names);
+  names
+    .iter()
+    .map(|name| {
+      let mut items = name.split('/');
+      let get_err = || anyhow::anyhow!("unexpected owner name layout");
+      let owner = items.next().ok_or_else(get_err)?;
+      let name = items.next().ok_or_else(get_err)?;
+      crate::github_api::get_repo(owner.to_owned(), name.to_owned())
+    })
+    .collect()
+}
