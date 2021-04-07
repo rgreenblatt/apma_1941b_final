@@ -30,9 +30,10 @@ struct UserCsvEntry {
   github_id: github_api::ID,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct RepoCsvEntry {
   github_id: github_api::ID,
+  name: String,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -114,9 +115,18 @@ pub fn main() -> anyhow::Result<()> {
       let repos: Vec<_> = repo_csv_entries
         .iter()
         .cloned()
-        .map(|RepoCsvEntry { github_id }| Repo { github_id })
+        .map(|RepoCsvEntry { github_id, .. }| Repo { github_id })
         .collect();
-      db::add::add_repos(&conn, &repos)?;
+      let names: Vec<_> = repo_csv_entries
+        .iter()
+        .map(|entry| entry.name.clone())
+        .collect();
+      let out = db::add::add_repos(&conn, &repos);
+      if out.is_err() {
+        dbg!(&repos);
+        out?;
+      }
+      db::add::add_repo_names(&conn, &names, &repos)?;
 
       Ok(())
     },

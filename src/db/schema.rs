@@ -16,6 +16,14 @@ table! {
 }
 
 table! {
+    repo_names (id) {
+        id -> Int4,
+        repo_id -> Int4,
+        name -> Varchar,
+    }
+}
+
+table! {
     repos (id) {
         id -> Int4,
         github_id -> Int4,
@@ -32,6 +40,7 @@ table! {
 allow_tables_to_appear_in_same_query!(
     contributions,
     dependencies,
+    repo_names,
     repos,
     users,
 );

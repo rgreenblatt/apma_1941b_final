@@ -1,5 +1,5 @@
 use super::{
-  schema::{contributions, dependencies, repos, users},
+  schema::{contributions, dependencies, repo_names, repos, users},
   GithubID,
 };
 use std::convert::Into;
@@ -116,6 +116,33 @@ impl From<RepoEntry> for Repo {
       github_id: repo.github_id,
     }
   }
+}
+
+#[derive(
+  Identifiable,
+  Queryable,
+  Associations,
+  Hash,
+  Ord,
+  PartialOrd,
+  Eq,
+  PartialEq,
+  Debug,
+  Clone,
+)]
+#[belongs_to(RepoEntry, foreign_key = "repo_id")]
+#[table_name = "repo_names"]
+pub struct RepoNameEntry {
+  pub(super) id: i32,
+  pub(super) repo_id: i32,
+  pub name: String,
+}
+
+#[derive(Insertable, Hash, Ord, PartialOrd, Eq, PartialEq, Debug, Clone)]
+#[table_name = "repo_names"]
+pub struct NewRepoName {
+  pub(super) repo_id: i32,
+  pub name: String,
 }
 
 #[derive(
