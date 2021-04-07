@@ -1,0 +1,8 @@
+query RepoNames($ids: [ID!]!) {
+  nodes(ids: $ids) {
+    __typename
+    ... on Repository {
+      nameWithOwner
+    }
+  }
+}

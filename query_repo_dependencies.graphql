@@ -1,44 +1,46 @@
 query RepoDependencies(
-  $owner: String!
-  $name: String!
+  $ids: [ID!]!
   $manifestsAfter: String!
   $manifestsCount: Int!
   $dependenciesAfter: String!
   $submodulesAfter: String!
   $submodulesCount: Int!
 ) {
-  repository(owner: $owner, name: $name) {
-    dependencyGraphManifests(
-      first: $manifestsCount
-      after: $manifestsAfter
-      withDependencies: true
-    ) {
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      nodes {
-        dependencies(first: 100, after: $dependenciesAfter) {
-          pageInfo {
-            hasNextPage
-            endCursor
-          }
-          nodes {
-            packageManager
-            repository {
-              nameWithOwner
+  nodes(ids: $ids) {
+    __typename
+    ... on Repository {
+      dependencyGraphManifests(
+        first: $manifestsCount
+        after: $manifestsAfter
+        withDependencies: true
+      ) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          dependencies(first: 100, after: $dependenciesAfter) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              packageManager
+              repository {
+                nameWithOwner
+              }
             }
           }
         }
       }
-    }
-    submodules(first: $submodulesCount, after: $submodulesAfter) {
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
-      nodes {
-        gitUrl
+      submodules(first: $submodulesCount, after: $submodulesAfter) {
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+        nodes {
+          gitUrl
+        }
       }
     }
   }

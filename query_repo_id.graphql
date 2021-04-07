@@ -1,0 +1,5 @@
+query RepoID($name: String!, $owner: String!) {
+  repository(name: $name, owner: $owner) {
+    id
+  }
+}

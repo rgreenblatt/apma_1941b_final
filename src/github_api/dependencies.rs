@@ -1,9 +1,12 @@
+use super::{
+  get_token, ResponseError, API_COUNT_LIMIT, GITHUB_GRAPHQL_ENDPOINT, ID,
+};
 use crate::Repo;
 use anyhow::{anyhow, Result};
 use graphql_client::GraphQLQuery;
 #[cfg(test)]
 use std::collections::HashMap;
-use std::{convert::TryInto, error::Error, fmt};
+use std::convert::TryInto;
 
 type URI = String;
 
@@ -20,8 +23,7 @@ struct DependencyIterator {
   manifests_after: Option<String>,
   dependencies_after: Option<String>,
   submodules_after: Option<String>,
-  owner: String,
-  name: String,
+  ids: Vec<String>,
   current_page: Vec<Dependency>,
   api_token: String,
   finished: bool,
@@ -34,30 +36,7 @@ pub struct Dependency {
   pub repo: Repo,
 }
 
-#[derive(PartialEq, Eq, Debug)]
-pub enum RepoDependencyResponseError {
-  RepoNotFound,
-  UnexpectedNull(String),
-}
-
-impl fmt::Display for RepoDependencyResponseError {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match self {
-      Self::RepoNotFound => {
-        write!(f, "repo not found")
-      }
-      Self::UnexpectedNull(s) => {
-        write!(f, "{} was null", s)
-      }
-    }
-  }
-}
-
-impl Error for RepoDependencyResponseError {}
-
-const GITHUB_GRAPHQL_ENDPOINT: &'static str = "https://api.github.com/graphql";
 const GIT_SUBMODULE_MANAGER: &'static str = "git_submodule";
-const API_COUNT_LIMIT: i64 = 100;
 
 impl DependencyIterator {
   fn next_result(&mut self) -> Result<Option<Dependency>> {
@@ -95,8 +74,7 @@ impl DependencyIterator {
         .unwrap_or("".to_owned()),
       submodules_after,
       submodules_count,
-      owner: self.owner.clone(),
-      name: self.name.clone(),
+      ids: self.ids,
     });
 
     let client = reqwest::blocking::Client::builder()
@@ -123,12 +101,15 @@ impl DependencyIterator {
     let response_data =
       response_body.data.ok_or(anyhow!("missing response data"))?;
 
-    let repo = response_data
-      .repository
-      .ok_or(RepoDependencyResponseError::RepoNotFound)?;
-
-    self.handle_manifests(&repo)?;
-    self.handle_submodules(&repo)?;
+    for node in response_data.nodes {
+      use repo_dependencies::RepoDependenciesNodesOn::*;
+      if let Repository(repo) = node.unwrap().on {
+        self.handle_manifests(&repo)?;
+        self.handle_submodules(&repo)?;
+      } else {
+        return Err(anyhow!("node wasn't repo"));
+      }
+    }
 
     Ok(())
   }
@@ -142,7 +123,7 @@ impl DependencyIterator {
 
   fn handle_manifests(
     &mut self,
-    repo: &repo_dependencies::RepoDependenciesRepository,
+    repo: &repo_dependencies::RepoDependenciesNodesOnRepository,
   ) -> Result<()> {
     let manifests = repo
       .dependency_graph_manifests
@@ -209,7 +190,7 @@ impl DependencyIterator {
 
   fn handle_submodules(
     &mut self,
-    repo: &repo_dependencies::RepoDependenciesRepository,
+    repo: &repo_dependencies::RepoDependenciesNodesOnRepository,
   ) -> Result<()> {
     let submodules = &repo.submodules;
 
@@ -242,8 +223,8 @@ impl DependencyIterator {
     Ok(())
   }
 
-  fn null_err(s: &str) -> RepoDependencyResponseError {
-    RepoDependencyResponseError::UnexpectedNull(s.to_owned())
+  fn null_err(s: &str) -> ResponseError {
+    ResponseError::UnexpectedNull(s.to_owned())
   }
 }
 
@@ -261,30 +242,31 @@ impl Iterator for DependencyIterator {
   }
 }
 
-pub fn get_repo_dependencies<'a>(
-  owner: &str,
-  name: &str,
-) -> impl Iterator<Item = IterItem> {
-  dotenv::dotenv().ok();
-
-  let api_token =
-    std::env::var("GITHUB_API_TOKEN").expect("GITHUB_API_TOKEN must be set");
-
+pub fn get_repo_dependencies(ids: &[ID]) -> impl Iterator<Item = IterItem> {
+  // TODO: dedup code
   DependencyIterator {
     manifests_after: Some("".to_owned()),
     dependencies_after: Some("".to_owned()),
     submodules_after: Some("".to_owned()),
-    owner: owner.to_owned(),
-    name: name.to_owned(),
+    ids: ids.iter().map(ID::to_string).collect(),
     current_page: Vec::new(),
-    api_token,
+    api_token: get_token(),
     finished: false,
   }
 }
 
+pub fn get_repo_dependencies_by_name(
+  owner: &str,
+  name: &str,
+) -> impl Iterator<Item = IterItem> {
+  unimplemented!();
+
+  get_repo_dependencies(&[])
+}
+
 #[test]
 fn repo_not_found() -> Result<()> {
-  let mut iter = get_repo_dependencies(
+  let mut iter = get_repo_dependencies_by_name(
     "rgreenblatt",
     "a_repo_which_certainly_does_not_exist",
   );
@@ -296,11 +278,11 @@ fn repo_not_found() -> Result<()> {
   let next_err = next.unwrap_err();
 
   assert_eq!(
-    match next_err.downcast_ref::<RepoDependencyResponseError>() {
+    match next_err.downcast_ref::<ResponseError>() {
       Some(err) => err,
       None => return Err(next_err).into(),
     },
-    &RepoDependencyResponseError::RepoNotFound,
+    &ResponseError::RepoNotFound,
   );
   assert!(iter.next().is_none());
 
@@ -310,7 +292,7 @@ fn repo_not_found() -> Result<()> {
 #[test]
 fn single_submodule() -> Result<()> {
   let mut iter =
-    get_repo_dependencies("rgreenblatt", "repo_with_single_submodule");
+    get_repo_dependencies_by_name("rgreenblatt", "repo_with_single_submodule");
   assert_eq!(
     iter.next().unwrap()?,
     Dependency {
@@ -330,8 +312,8 @@ fn gen_test(
   expected_count: usize,
   expected_items: Option<Vec<(&'static str, usize)>>,
 ) -> Result<()> {
-  let all =
-    get_repo_dependencies(owner, name).collect::<Result<Vec<Dependency>>>()?;
+  let all = get_repo_dependencies_by_name(owner, name)
+    .collect::<Result<Vec<Dependency>>>()?;
 
   assert_eq!(all.len(), expected_count);
 
@@ -429,7 +411,7 @@ fn many_pages_of_dependencies() -> Result<()> {
 // We just check that we don't error.
 #[test]
 fn many_manifests() -> Result<()> {
-  get_repo_dependencies("gimlichael", "Cuemon")
+  get_repo_dependencies_by_name("gimlichael", "Cuemon")
     .collect::<Result<Vec<Dependency>>>()?;
 
   Ok(())
