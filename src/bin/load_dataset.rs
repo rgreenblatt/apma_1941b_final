@@ -1,6 +1,5 @@
 use flate2::read::GzDecoder;
 use github_net::{github_api, Repo, User};
-use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::{
   collections::HashMap,
@@ -14,8 +13,8 @@ use structopt::StructOpt;
 
 #[derive(StructOpt)]
 #[structopt(
-  name = "build_dataset",
-  about = "fill the database (postgres) from .json.gz files"
+  name = "load_dataset",
+  about = "load the dataset directly into memory from .csv.gz files"
 )]
 struct Opt {
   #[structopt(parse(from_os_str))]
