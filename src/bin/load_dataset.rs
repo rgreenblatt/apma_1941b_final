@@ -1,5 +1,6 @@
 use flate2::read::GzDecoder;
 use github_net::{github_api, Repo, User};
+use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::{
   collections::HashMap,
@@ -133,7 +134,11 @@ where
     let mut count = 0;
     for record in csv_reader.deserialize() {
       f(record?);
-      count += 1
+      count += 1;
+      if count % 100000 == 0 {
+        bar.inc(count);
+        count = 0;
+      }
     }
     bar.inc(count);
   }
