@@ -1,0 +1,1 @@
+DROP INDEX user_github_id_index

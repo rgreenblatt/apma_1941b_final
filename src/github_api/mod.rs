@@ -48,7 +48,7 @@ impl Error for UserNotFoundError {}
 
 use info::NodeIDWrapper;
 
-const API_COUNT_LIMIT: i64 = 100;
+pub const API_COUNT_LIMIT: i64 = 100;
 const GITHUB_GRAPHQL_ENDPOINT: &'static str = "https://api.github.com/graphql";
 
 fn make_request<Query: GraphQLQuery>(

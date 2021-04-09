@@ -203,7 +203,7 @@ pub(super) struct DependencyEntry {
   Insertable, Hash, Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone,
 )]
 #[table_name = "dependencies"]
-pub(super) struct NewDepencency {
+pub struct NewDepencency {
   pub(super) repo_from_id: i32,
   pub(super) repo_to_id: i32,
 }

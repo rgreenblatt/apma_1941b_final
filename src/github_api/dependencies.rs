@@ -2,8 +2,7 @@ use super::{
   get_token, NodeIDWrapper, RepoNotFoundError, UnexpectedNullError,
   API_COUNT_LIMIT, GITHUB_GRAPHQL_ENDPOINT,
 };
-use crate::db;
-use crate::Repo;
+use crate::{db, Repo};
 use anyhow::{anyhow, Result};
 use graphql_client::GraphQLQuery;
 #[cfg(test)]
@@ -57,11 +56,13 @@ impl DependencyIterator {
           .iter()
           .zip(&self.current_submodule_from_repos)
       {
-        self.current_page.push(Dependency {
-          to_repo,
-          from_repo,
-          package_manager: Some(GIT_SUBMODULE_MANAGER.to_owned()),
-        });
+        if let Some(to_repo) = to_repo {
+          self.current_page.push(Dependency {
+            to_repo,
+            from_repo,
+            package_manager: Some(GIT_SUBMODULE_MANAGER.to_owned()),
+          });
+        }
       }
 
       self.current_submodules.clear();
@@ -276,7 +277,6 @@ impl Iterator for DependencyIterator {
 }
 
 pub fn get_repo_dependencies(repos: &[Repo]) -> impl Iterator<Item = IterItem> {
-  // TODO: dedup code
   DependencyIterator {
     conn: db::establish_connection(),
     manifests_after: Some("".to_owned()),
@@ -356,11 +356,19 @@ fn gen_test(
 
     assert_eq!(map.len(), expected_items.len());
 
-    for (owner_name, count) in expected_items {
-      let to_repo =
-        db::get_repos_from_names(&conn, &[owner_name.to_owned()])?[0];
+    let expected_repos = dbg!(db::get_repos_from_names(
+      &conn,
+      &expected_items
+        .iter()
+        .map(|v| v.0.to_owned())
+        .collect::<Vec<_>>(),
+    )?)
+    .into_iter()
+    .map(|v| v.unwrap());
 
-      assert_eq!(map.get(&to_repo).unwrap(), &count);
+    for ((_, count), expected_repo) in expected_items.iter().zip(expected_repos)
+    {
+      assert_eq!(map.get(&expected_repo).unwrap(), count);
     }
   }
 
@@ -383,25 +391,19 @@ fn many_submodules() -> Result<()> {
     "rgreenblatt",
     "repo_with_many_submodules",
     6,
-    Some(vec![
-      ("rgreenblatt/repo_with_many_submodules", 1),
-      ("rgreenblatt/repo_with_single_submodule", 1),
-      ("octokit/graphql-schema", 3),
-      ("numpy/numpy", 1),
-    ]),
+    Some(vec![("octokit/graphql-schema", 3), ("numpy/numpy", 3)]),
   )
 }
 
-// TODO: renable when db::get_repos_from_names is actually implemented!
-// #[test]
-// fn many_pages_of_submodules() -> Result<()> {
-//   gen_test(
-//     "rgreenblatt",
-//     "repo_with_many_pages_of_submodules",
-//     380,
-//     Some(vec![("rgreenblatt/repo_with_many_submodules", 380)]),
-//   )
-// }
+#[test]
+fn many_pages_of_submodules() -> Result<()> {
+  gen_test(
+    "rgreenblatt",
+    "repo_with_many_pages_of_submodules",
+    380,
+    Some(vec![("numpy/numpy", 380)]),
+  )
+}
 
 #[test]
 fn single_dependency() -> Result<()> {
@@ -418,13 +420,12 @@ fn many_dependencies() -> Result<()> {
   gen_test(
     "rgreenblatt",
     "repo_with_many_dependencies",
-    10,
+    9,
     Some(vec![
       ("mongodb/bson-ruby", 1),
       ("flori/json", 2),
       ("whitequark/ast", 2),
       ("aws/aws-sdk-ruby", 3),
-      ("bcrypt-ruby/bcrypt-ruby", 1),
       ("jimweirich/builder", 1),
     ]),
   )
@@ -471,15 +472,14 @@ fn many_manifests() -> Result<()> {
   Ok(())
 }
 
-// TODO: renable when db::get_repos_from_names is actually implemented!
 // NOTE: the exact numbers on this test aren't important (this might change as
 // packages are shifted around etc...)
-// #[test]
-// fn many_pages_of_everything() -> Result<()> {
-//   gen_test(
-//     "rgreenblatt",
-//     "repo_with_many_pages_of_submodules_and_dependencies",
-//     370 + 380,
-//     None,
-//   )
-// }
+#[test]
+fn many_pages_of_everything() -> Result<()> {
+  gen_test(
+    "rgreenblatt",
+    "repo_with_many_pages_of_submodules_and_dependencies",
+    370 + 380,
+    None,
+  )
+}

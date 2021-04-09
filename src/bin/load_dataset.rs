@@ -1,5 +1,8 @@
 use flate2::read::GzDecoder;
-use github_net::{github_api, Repo, User};
+use github_net::{
+  csv_items::{ContributionCsvEntry, RepoCsvEntry, UserCsvEntry},
+  Repo, User,
+};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::Deserialize;
 use std::{
@@ -28,29 +31,11 @@ struct Opt {
   contribution_csv_list: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
-struct UserCsvEntry {
-  github_id: github_api::ID,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-struct RepoCsvEntry {
-  github_id: github_api::ID,
-  name: String,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-struct ContributionCsvEntry {
-  user_github_id: github_api::ID,
-  repo_github_id: github_api::ID,
-  num: u32,
-}
-
 #[derive(Clone, Copy, Debug)]
 struct Contribution {
   user_idx: usize,
   repo_idx: usize,
-  num: u32,
+  num: i32,
 }
 
 #[derive(Clone, Debug)]

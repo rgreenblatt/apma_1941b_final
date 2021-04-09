@@ -1,27 +1,21 @@
 #[cfg(test)]
 use super::{
-  models::{ContributionEntry, DependencyEntry},
+  models::{ContributionEntry, DependencyEntry, UserEntry},
   TestContext,
 };
 use super::{
   models::{
-    HasGithubID, NewContribution, NewDepencency, NewRepoName, Repo, RepoEntry,
-    User, UserEntry,
+    NewContribution, NewDepencency, NewRepoName, Repo, RepoEntry, User,
   },
   schema::{
     contributions::dsl as contrib_dsl, dependencies::dsl as depends_dsl,
     repo_names::dsl as repo_name_dsl, repos::dsl as repo_dsl,
     users::dsl as user_dsl,
   },
-  GithubID,
+  utils::{get_repo_entries, get_user_entries},
 };
-use diesel::{
-  pg::{expression::dsl as pg_dsl, PgConnection},
-  prelude::*,
-  QueryResult,
-};
+use diesel::{pg::PgConnection, prelude::*, QueryResult};
 use itertools::Itertools;
-use std::collections::HashMap;
 
 #[cfg(any(test, debug_assertions))]
 use std::collections::HashSet;
@@ -98,74 +92,6 @@ pub fn add_repos(conn: &PgConnection, new_repos: &[Repo]) -> QueryResult<()> {
   Ok(())
 }
 
-fn get_entries_helper<T>(ids: &[GithubID], results: Vec<T>) -> Vec<T>
-where
-  T: HasGithubID + Clone + Default + PartialEq,
-{
-  assert!(results.len() <= ids.len());
-
-  let id_to_idxs = {
-    let mut map = HashMap::new();
-    for (i, id) in ids.iter().enumerate() {
-      map.entry(id).or_insert_with(Vec::new).push(i)
-    }
-
-    map
-  };
-  let mut out = vec![Default::default(); ids.len()];
-
-  for entry in results {
-    for &i in id_to_idxs.get(&entry.get_github_id()).unwrap() {
-      out[i] = entry.clone();
-    }
-  }
-
-  assert!(out.iter().all(|v| *v != Default::default()));
-  assert!(out.iter().zip(ids).all(|(v, id)| v.get_github_id() == *id));
-
-  out
-}
-
-fn get_repo_entries_id(
-  conn: &PgConnection,
-  repo_ids: &[GithubID],
-) -> QueryResult<Vec<RepoEntry>> {
-  let results = repo_dsl::repos
-    .filter(repo_dsl::github_id.eq(pg_dsl::any(repo_ids)))
-    .get_results(conn)?;
-  Ok(get_entries_helper(repo_ids, results))
-}
-
-fn get_user_entries_id(
-  conn: &PgConnection,
-  user_ids: &[GithubID],
-) -> QueryResult<Vec<UserEntry>> {
-  let results = user_dsl::users
-    .filter(user_dsl::github_id.eq(pg_dsl::any(user_ids)))
-    .get_results(conn)?;
-  Ok(get_entries_helper(user_ids, results))
-}
-
-fn get_repo_entries(
-  conn: &PgConnection,
-  repos: &[Repo],
-) -> QueryResult<Vec<RepoEntry>> {
-  get_repo_entries_id(
-    conn,
-    &repos.iter().map(|repo| repo.github_id).collect_vec(),
-  )
-}
-
-fn get_user_entries(
-  conn: &PgConnection,
-  users: &[User],
-) -> QueryResult<Vec<UserEntry>> {
-  get_user_entries_id(
-    conn,
-    &users.iter().map(|user| user.github_id).collect_vec(),
-  )
-}
-
 #[cfg(debug_assertions)]
 use std::hash::Hash;
 
@@ -180,7 +106,7 @@ where
 }
 
 /// "to" is what the "from" repo is depending on
-pub fn dependencies(
+pub fn add_dependencies(
   conn: &PgConnection,
   from: &RepoEntry,
   to: &[Repo],
@@ -300,7 +226,7 @@ fn simple_dependencies() -> QueryResult<()> {
 
   add_repos(conn, &repos)?;
 
-  dependencies(conn, &repos_owned[2], &repos[0..2])?;
+  add_dependencies(conn, &repos_owned[2], &repos[0..2])?;
 
   let depends = depends_dsl::dependencies.load::<DependencyEntry>(conn)?;
 
@@ -310,7 +236,7 @@ fn simple_dependencies() -> QueryResult<()> {
   assert_eq!(depends[0].repo_to_id, repos_owned[0].id);
   assert_eq!(depends[1].repo_to_id, repos_owned[1].id);
 
-  dependencies(conn, &repos_owned[1], &repos[2..3])?;
+  add_dependencies(conn, &repos_owned[1], &repos[2..3])?;
 
   let depends = depends_dsl::dependencies.load::<DependencyEntry>(conn)?;
 

@@ -3,10 +3,4 @@ CREATE TABLE contributions (
   repo_id SERIAL,
   user_id SERIAL,
   num INT NOT NULL
-
-  /* too slow! */
-  /* CONSTRAINT contributions_repo_user_unique UNIQUE (repo_id,user_id) */
 );
-
-CREATE INDEX contribution_foreign_id_index
-on contributions (repo_id, user_id);

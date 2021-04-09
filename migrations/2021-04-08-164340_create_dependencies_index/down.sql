@@ -1,0 +1,2 @@
+DROP INDEX dependencies_repo_from_id_index;
+DROP INDEX dependencies_repo_to_id_index;
