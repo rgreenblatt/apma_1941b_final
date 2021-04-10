@@ -103,9 +103,8 @@ where
   let mut overall_count = 0;
 
   for line in lines {
-    let mut csv_reader = csv::Reader::from_reader(GzDecoder::new(
-      BufReader::new(File::open(line)?),
-    ));
+    let mut csv_reader =
+      csv::Reader::from_reader(GzDecoder::new(File::open(line)?));
 
     let mut bar_count = 0;
     for record in csv_reader.deserialize() {

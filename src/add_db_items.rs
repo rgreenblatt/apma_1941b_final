@@ -50,9 +50,8 @@ where
           return Ok(());
         };
 
-        let mut csv_reader = csv::Reader::from_reader(GzDecoder::new(
-          BufReader::new(File::open(line)?),
-        ));
+        let mut csv_reader =
+          csv::Reader::from_reader(GzDecoder::new(File::open(line)?));
 
         let add_items = |new_items: &mut Vec<T>| -> anyhow::Result<()> {
           f(&conn, new_items)?;

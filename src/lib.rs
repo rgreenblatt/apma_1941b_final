@@ -6,6 +6,7 @@ extern crate diesel;
 pub mod add_db_items;
 pub mod csv_items;
 pub mod db;
+pub mod degree_dist_csv;
 pub mod github_api;
 pub mod loaded_dataset;
 
