@@ -2,10 +2,8 @@ use anyhow::{anyhow, Result};
 use graphql_client::GraphQLQuery;
 use std::{error::Error, fmt};
 
-mod dependencies;
 mod info;
 
-pub use dependencies::get_repo_dependencies;
 pub use info::{get_repo, get_repo_names, get_user, get_user_logins};
 
 /// Not really sure about this type (might not be big enough).
@@ -46,8 +44,6 @@ impl fmt::Display for UserNotFoundError {
 
 impl Error for UserNotFoundError {}
 
-use info::NodeIDWrapper;
-
 pub const API_COUNT_LIMIT: i64 = 100;
 const GITHUB_GRAPHQL_ENDPOINT: &str = "https://api.github.com/graphql";
 
@@ -70,7 +66,9 @@ fn make_request<Query: GraphQLQuery>(
 
   let response_body: graphql_client::Response<_> = res.json()?;
 
-  response_body.data.ok_or_else(|| anyhow!("missing response data"))
+  response_body
+    .data
+    .ok_or_else(|| anyhow!("missing response data"))
 }
 
 fn get_token() -> String {
