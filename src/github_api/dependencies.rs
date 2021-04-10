@@ -41,7 +41,7 @@ pub struct Dependency {
   pub package_manager: Option<String>,
 }
 
-const GIT_SUBMODULE_MANAGER: &'static str = "git_submodule";
+const GIT_SUBMODULE_MANAGER: &str = "git_submodule";
 
 impl DependencyIterator {
   fn next_result(&mut self) -> Result<Option<Dependency>> {
@@ -76,12 +76,9 @@ impl DependencyIterator {
         return Ok(None);
       }
 
-      match self.next_page() {
-        Err(e) => {
-          self.finished = true;
-          return Err(e);
-        }
-        _ => {}
+      if let Err(e) = self.next_page() {
+        self.finished = true;
+        return Err(e);
       }
     }
   }
@@ -97,7 +94,7 @@ impl DependencyIterator {
       dependencies_after: self
         .dependencies_after
         .clone()
-        .unwrap_or("".to_owned()),
+        .unwrap_or_else(|| "".to_owned()),
       submodules_after,
       submodules_count,
       ids: self.node_ids.clone(),
@@ -125,7 +122,7 @@ impl DependencyIterator {
     > = res.json()?;
 
     let response_data =
-      response_body.data.ok_or(anyhow!("missing response data"))?;
+      response_body.data.ok_or_else(|| anyhow!("missing response data"))?;
 
     for node in response_data.nodes {
       let node = node.as_ref().ok_or(RepoNotFoundError {})?;
@@ -160,30 +157,30 @@ impl DependencyIterator {
     let manifests = repo
       .dependency_graph_manifests
       .as_ref()
-      .ok_or(Self::null_err("manifests"))?;
+      .ok_or_else(|| Self::null_err("manifests"))?;
 
     let nodes = manifests
       .nodes
       .as_ref()
-      .ok_or(Self::null_err("manifest nodes"))?;
+      .ok_or_else(||Self::null_err("manifest nodes"))?;
 
     self.finished = true;
     self.dependencies_after = None;
 
     for node in nodes {
-      let node = node.as_ref().ok_or(Self::null_err("manifest node"))?;
+      let node = node.as_ref().ok_or_else(|| Self::null_err("manifest node"))?;
 
       let dependencies = node
         .dependencies
         .as_ref()
-        .ok_or(Self::null_err("dependencies"))?;
+        .ok_or_else(|| Self::null_err("dependencies"))?;
 
       let dep_nodes = dependencies
         .nodes
         .as_ref()
-        .ok_or(Self::null_err("dependency nodes"))?;
+        .ok_or_else(|| Self::null_err("dependency nodes"))?;
       for depend in dep_nodes {
-        let depend = depend.as_ref().ok_or(Self::null_err("dependency"))?;
+        let depend = depend.as_ref().ok_or_else(|| Self::null_err("dependency"))?;
         let to_repo = if let Some(repo) = &depend.repository {
           Repo::from_node_id(&repo.id)?
         } else {
@@ -201,7 +198,7 @@ impl DependencyIterator {
           .page_info
           .end_cursor
           .clone()
-          .ok_or(Self::null_err(
+          .ok_or_else(|| Self::null_err(
             "dependency end cursor was null with a next page!",
           ))?;
         if let Some(dependencies_after) = &self.dependencies_after {
@@ -231,9 +228,9 @@ impl DependencyIterator {
     for node in submodules
       .nodes
       .as_ref()
-      .ok_or(Self::null_err("submodule nodes"))?
+      .ok_or_else(|| Self::null_err("submodule nodes"))?
     {
-      let node = node.as_ref().ok_or(Self::null_err("submodule node"))?;
+      let node = node.as_ref().ok_or_else(|| Self::null_err("submodule node"))?;
       let git_url = git_url_parse::GitUrl::parse(&node.git_url)?;
       match git_url.host {
         Some(s) if &s == "github.com" => {}
@@ -243,7 +240,7 @@ impl DependencyIterator {
       let owner: &str = git_url
         .owner
         .as_ref()
-        .ok_or(anyhow!("submodule url was parsed with missing owner!"))?;
+        .ok_or_else(|| anyhow!("submodule url was parsed with missing owner!"))?;
 
       self
         .current_submodules

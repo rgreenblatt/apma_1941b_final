@@ -7,7 +7,18 @@ pub struct UserCsvEntry {
 }
 
 #[derive(Clone, Debug, Deserialize)]
+pub struct UserLoginCsvEntry {
+  pub github_id: github_api::ID,
+  pub login: String,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub struct RepoCsvEntry {
+  pub repo_github_id: github_api::ID,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct RepoNameCsvEntry {
   pub github_id: github_api::ID,
   pub name: String,
 }

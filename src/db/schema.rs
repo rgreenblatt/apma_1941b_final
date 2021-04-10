@@ -31,6 +31,14 @@ table! {
 }
 
 table! {
+    user_logins (id) {
+        id -> Int4,
+        user_id -> Int4,
+        login -> Varchar,
+    }
+}
+
+table! {
     users (id) {
         id -> Int4,
         github_id -> Int4,
@@ -42,5 +50,6 @@ allow_tables_to_appear_in_same_query!(
     dependencies,
     repo_names,
     repos,
+    user_logins,
     users,
 );

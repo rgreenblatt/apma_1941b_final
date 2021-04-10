@@ -49,7 +49,7 @@ impl Error for UserNotFoundError {}
 use info::NodeIDWrapper;
 
 pub const API_COUNT_LIMIT: i64 = 100;
-const GITHUB_GRAPHQL_ENDPOINT: &'static str = "https://api.github.com/graphql";
+const GITHUB_GRAPHQL_ENDPOINT: &str = "https://api.github.com/graphql";
 
 fn make_request<Query: GraphQLQuery>(
   variables: Query::Variables,
@@ -70,7 +70,7 @@ fn make_request<Query: GraphQLQuery>(
 
   let response_body: graphql_client::Response<_> = res.json()?;
 
-  response_body.data.ok_or(anyhow!("missing response data"))
+  response_body.data.ok_or_else(|| anyhow!("missing response data"))
 }
 
 fn get_token() -> String {

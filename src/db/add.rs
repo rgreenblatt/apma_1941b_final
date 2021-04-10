@@ -5,12 +5,13 @@ use super::{
 };
 use super::{
   models::{
-    NewContribution, NewDepencency, NewRepoName, Repo, RepoEntry, User,
+    NewContribution, NewDepencency, NewRepoName, NewUserLogin, Repo, RepoEntry,
+    User,
   },
   schema::{
     contributions::dsl as contrib_dsl, dependencies::dsl as depends_dsl,
     repo_names::dsl as repo_name_dsl, repos::dsl as repo_dsl,
-    users::dsl as user_dsl,
+    user_logins::dsl as user_login_dsl, users::dsl as user_dsl,
   },
   utils::{get_repo_entries, get_user_entries},
 };
@@ -45,6 +46,31 @@ pub fn add_contributions(
 
   diesel::insert_into(contrib_dsl::contributions)
     .values(new_contributions)
+    .execute(conn)?;
+
+  Ok(())
+}
+
+pub fn add_user_logins(
+  conn: &PgConnection,
+  logins: &[String],
+  users: &[User],
+) -> QueryResult<()> {
+  assert_eq!(logins.len(), users.len());
+
+  let users = get_user_entries(conn, users)?;
+
+  let new_user_logins = logins
+    .iter()
+    .zip(users)
+    .map(|(login, user)| NewUserLogin {
+      user_id: user.id,
+      login: login.clone(),
+    })
+    .collect_vec();
+
+  diesel::insert_into(user_login_dsl::user_logins)
+    .values(new_user_logins)
     .execute(conn)?;
 
   Ok(())
@@ -86,7 +112,6 @@ pub fn add_users(conn: &PgConnection, new_users: &[User]) -> QueryResult<()> {
 pub fn add_repos(conn: &PgConnection, new_repos: &[Repo]) -> QueryResult<()> {
   diesel::insert_into(repo_dsl::repos)
     .values(new_repos)
-    .on_conflict_do_nothing()
     .execute(conn)?;
 
   Ok(())

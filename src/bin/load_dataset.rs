@@ -1,6 +1,9 @@
 use flate2::read::GzDecoder;
 use github_net::{
-  csv_items::{ContributionCsvEntry, RepoCsvEntry, UserCsvEntry},
+  csv_items::{
+    ContributionCsvEntry, RepoCsvEntry, RepoNameCsvEntry, UserCsvEntry,
+    UserLoginCsvEntry,
+  },
   Repo, User,
 };
 use indicatif::{ProgressBar, ProgressStyle};
@@ -26,6 +29,12 @@ struct Opt {
 
   #[structopt(parse(from_os_str))]
   repo_csv_list: PathBuf,
+
+  #[structopt(parse(from_os_str))]
+  user_login_csv_list: PathBuf,
+
+  #[structopt(parse(from_os_str))]
+  repo_name_csv_list: PathBuf,
 
   #[structopt(parse(from_os_str))]
   contribution_csv_list: PathBuf,
@@ -144,15 +153,39 @@ pub fn main() -> anyhow::Result<()> {
   })?;
 
   let mut repos = Vec::new();
-  let mut repo_names = Vec::new();
   let mut repo_to_idx = HashMap::new();
 
-  add_items(opt.repo_csv_list, |RepoCsvEntry { github_id, name }| {
-    let repo = Repo { github_id };
+  add_items(opt.repo_csv_list, |RepoCsvEntry { repo_github_id }| {
+    let repo = Repo {
+      github_id: repo_github_id,
+    };
     repo_to_idx.insert(repo, repos.len());
     repos.push(repo);
-    repo_names.push(name);
   })?;
+
+  let mut user_logins = vec!["".to_owned(); users.len()];
+
+  add_items(
+    opt.user_login_csv_list,
+    |UserLoginCsvEntry { github_id, login }| {
+      let idx = *user_to_idx.get(&User { github_id }).unwrap();
+      user_logins[idx] = login;
+    },
+  )?;
+
+  assert!(user_logins.iter().all(|name| name.is_empty()));
+
+  let mut repo_names = vec!["".to_owned(); repos.len()];
+
+  add_items(
+    opt.repo_name_csv_list,
+    |RepoNameCsvEntry { github_id, name }| {
+      let idx = *repo_to_idx.get(&Repo { github_id }).unwrap();
+      repo_names[idx] = name;
+    },
+  )?;
+
+  assert!(repo_names.iter().all(|name| name.is_empty()));
 
   let mut user_contributions = vec![Vec::new(); users.len()];
   let mut repo_contributions = vec![Vec::new(); repos.len()];
@@ -195,13 +228,41 @@ pub fn main() -> anyhow::Result<()> {
   let user_contributions: EdgeVec<_> = user_contributions.into_iter().collect();
   let repo_contributions: EdgeVec<_> = repo_contributions.into_iter().collect();
 
-  dbg!(user_contributions.iter().map(|v| v.len()).max());
-  dbg!(user_contributions.iter().map(|v| v.len()).min());
-  dbg!(repo_contributions.iter().map(|v| v.len()).max());
-  dbg!(repo_contributions.iter().map(|v| v.len()).min());
+  let get_repo_name = |(c, idx): (usize, usize)| (c, repo_names[idx].clone());
+  let get_user_login = |(c, idx): (usize, usize)| (c, user_logins[idx].clone());
 
-  dbg!("fin");
-  std::thread::sleep(std::time::Duration::new(8, 0));
+  dbg!(get_user_login(
+    user_contributions
+      .iter()
+      .enumerate()
+      .map(|(i, v)| (v.len(), i))
+      .max()
+      .unwrap()
+  ));
+  dbg!(get_user_login(
+    user_contributions
+      .iter()
+      .enumerate()
+      .map(|(i, v)| (v.len(), i))
+      .min()
+      .unwrap()
+  ));
+  dbg!(get_repo_name(
+    repo_contributions
+      .iter()
+      .enumerate()
+      .map(|(i, v)| (v.len(), i))
+      .max()
+      .unwrap()
+  ));
+  dbg!(get_repo_name(
+    repo_contributions
+      .iter()
+      .enumerate()
+      .map(|(i, v)| (v.len(), i))
+      .min()
+      .unwrap()
+  ));
 
   Ok(())
 }

@@ -1,8 +1,9 @@
 use super::{
-  schema::{contributions, dependencies, repo_names, repos, users},
+  schema::{
+    contributions, dependencies, repo_names, repos, user_logins, users,
+  },
   GithubID,
 };
-use std::convert::Into;
 
 pub trait HasGithubID {
   fn get_github_id(&self) -> GithubID;
@@ -116,6 +117,33 @@ impl From<RepoEntry> for Repo {
       github_id: repo.github_id,
     }
   }
+}
+
+#[derive(
+  Identifiable,
+  Queryable,
+  Associations,
+  Hash,
+  Ord,
+  PartialOrd,
+  Eq,
+  PartialEq,
+  Debug,
+  Clone,
+)]
+#[belongs_to(UserEntry, foreign_key = "user_id")]
+#[table_name = "user_logins"]
+pub struct UserLoginEntry {
+  pub(super) id: i32,
+  pub(super) user_id: i32,
+  pub login: String,
+}
+
+#[derive(Insertable, Hash, Ord, PartialOrd, Eq, PartialEq, Debug, Clone)]
+#[table_name = "user_logins"]
+pub struct NewUserLogin {
+  pub(super) user_id: i32,
+  pub login: String,
 }
 
 #[derive(

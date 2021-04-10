@@ -25,7 +25,7 @@ pub(super) trait NodeIDWrapper: GithubIDWrapper + Sized {
     }
     let id = sp
       .next()
-      .ok_or(anyhow!("unexpected base64 encoded id!"))?
+      .ok_or_else(|| anyhow!("unexpected base64 encoded id!"))?
       .parse()?;
 
     if sp.next().is_some() {

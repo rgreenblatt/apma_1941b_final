@@ -1,6 +1,6 @@
 use github_net::{
   add_items,
-  csv_items::{ContributionCsvEntry, RepoCsvEntry},
+  csv_items::{ContributionCsvEntry, RepoNameCsvEntry, UserLoginCsvEntry},
   db, Repo, User,
 };
 use std::path::PathBuf;
@@ -13,7 +13,10 @@ use structopt::StructOpt;
 )]
 struct Opt {
   #[structopt(parse(from_os_str))]
-  repo_csv_list: PathBuf,
+  user_login_csv_list: PathBuf,
+
+  #[structopt(parse(from_os_str))]
+  repo_name_csv_list: PathBuf,
 
   #[structopt(parse(from_os_str))]
   contribution_csv_list: PathBuf,
@@ -22,16 +25,37 @@ struct Opt {
 pub fn main() -> anyhow::Result<()> {
   let opt = Opt::from_args();
 
+  println!("adding user logins");
+
+  add_items(
+    opt.user_login_csv_list,
+    6,
+    |conn, user_csv_entries| -> anyhow::Result<()> {
+      let users: Vec<_> = user_csv_entries
+        .iter()
+        .cloned()
+        .map(|UserLoginCsvEntry { github_id, .. }| User { github_id })
+        .collect();
+      let logins: Vec<_> = user_csv_entries
+        .iter()
+        .map(|entry| entry.login.clone())
+        .collect();
+      db::add_user_logins(&conn, &logins, &users)?;
+
+      Ok(())
+    },
+  )?;
+
   println!("adding repo names");
 
   add_items(
-    opt.repo_csv_list,
+    opt.repo_name_csv_list,
     6,
     |conn, repo_csv_entries| -> anyhow::Result<()> {
       let repos: Vec<_> = repo_csv_entries
         .iter()
         .cloned()
-        .map(|RepoCsvEntry { github_id, .. }| Repo { github_id })
+        .map(|RepoNameCsvEntry { github_id, .. }| Repo { github_id })
         .collect();
       let names: Vec<_> = repo_csv_entries
         .iter()

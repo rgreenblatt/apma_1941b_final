@@ -12,7 +12,7 @@ use dotenv::dotenv;
 use itertools::Itertools;
 use std::{collections::HashMap, env, hash::Hash};
 
-/// note: we will pick arbitrarily if there are mutliple valid options!
+/// note: we will pick arbitrarily if there are multiple valid options!
 pub(super) fn reorder_entries<K, T, GetKey>(
   keys: &[K],
   entries: &[T],
@@ -23,8 +23,6 @@ where
   T: Clone + PartialEq,
   GetKey: Fn(&T) -> K,
 {
-  assert!(entries.len() <= keys.len());
-
   let id_to_idxs = {
     let mut map = HashMap::new();
     for (i, key) in keys.iter().enumerate() {
@@ -36,8 +34,10 @@ where
   let mut out = vec![Default::default(); keys.len()];
 
   for entry in entries {
-    for &i in id_to_idxs.get(&get_key(entry)).unwrap() {
-      out[i] = Some(entry.clone());
+    if let Some(items) = id_to_idxs.get(&get_key(entry)) {
+      for &i in items {
+        out[i] = Some(entry.clone());
+      }
     }
   }
 
@@ -55,7 +55,17 @@ fn reorder_entries_test() {
   assert_eq!(
     reorder_entries(
       &[8, 1, 2, 12, 3, 4, 0, 8],
-      &[(0, 3), (8, 2), (12, 7)],
+      &[
+        (0, 3),
+        (8, 2),
+        (12, 7),
+        (18, 0),
+        (19, 0),
+        (20, 0),
+        (30, 0),
+        (38, 0),
+        (40, 0)
+      ],
       |tup: &(usize, usize)| -> usize { tup.0 }
     ),
     vec![
@@ -129,5 +139,5 @@ pub fn establish_connection() -> PgConnection {
   let database_url =
     env::var("DATABASE_URL").expect("DATABASE_URL must be set");
   PgConnection::establish(&database_url)
-    .expect(&format!("Error connecting to {}", database_url))
+    .unwrap_or_else(|_| panic!("Error connecting to {}", database_url))
 }

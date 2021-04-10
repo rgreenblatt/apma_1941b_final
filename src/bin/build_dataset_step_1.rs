@@ -43,12 +43,12 @@ pub fn main() -> anyhow::Result<()> {
 
   add_items(
     opt.repo_csv_list,
-    1,
+    6,
     |conn, repo_csv_entries| -> anyhow::Result<()> {
       let repos: Vec<_> = repo_csv_entries
         .iter()
         .cloned()
-        .map(|RepoCsvEntry { github_id, .. }| Repo { github_id })
+        .map(|RepoCsvEntry { repo_github_id }| Repo { github_id : repo_github_id })
         .collect();
       db::add_repos(&conn, &repos)?;
 

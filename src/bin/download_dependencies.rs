@@ -1,4 +1,4 @@
-use github_net::{csv_items::DependencyCsvEntry, db, github_api, Repo};
+use github_net::{csv_items::DependencyCsvEntry, db, github_api};
 use std::{fs::File, path::PathBuf};
 use structopt::StructOpt;
 
@@ -16,17 +16,6 @@ pub fn main() -> anyhow::Result<()> {
   let opt = Opt::from_args();
 
   let conn = db::establish_connection();
-
-  for depend in github_api::get_repo_dependencies(
-    &[247527335, 192516323, 134880004, 246994218]
-      .iter()
-      .map(|&github_id| Repo { github_id })
-      .collect::<Vec<_>>(),
-  ) {
-    dbg!(depend?);
-  }
-
-  return Ok(());
 
   let repos = db::get_repos(&conn, None)?;
 

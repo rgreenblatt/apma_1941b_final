@@ -1,6 +1,9 @@
 use diesel::{pg::PgConnection, prelude::*};
+use diesel_migrations::{
+  embed_migrations, EmbeddedMigrations, MigrationHarness,
+};
 
-embed_migrations!("migrations/");
+pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("migrations/");
 
 // Keep the database info in mind to drop them later
 pub struct TestContextInner {
@@ -52,7 +55,7 @@ impl TestContext {
     let db_conn = PgConnection::establish(&db_url)
       .expect(&format!("error connecting to test db url {}", db_url));
 
-    embedded_migrations::run(&db_conn).unwrap();
+    db_conn.run_pending_migrations(MIGRATIONS).unwrap();
 
     TestContext { inner, db_conn }
   }
