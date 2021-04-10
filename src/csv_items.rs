@@ -1,5 +1,26 @@
 use super::github_api;
 use serde::{Deserialize, Serialize};
+use std::{env, path::PathBuf};
+
+pub struct ItemsPaths {
+  pub user_csv_list: PathBuf,
+  pub repo_csv_list: PathBuf,
+  pub user_login_csv_list: PathBuf,
+  pub repo_name_csv_list: PathBuf,
+  pub contribution_csv_list: PathBuf,
+}
+
+pub fn get_csv_list_paths() -> ItemsPaths {
+  dotenv::dotenv().ok();
+
+  ItemsPaths {
+    user_csv_list: env::var("USER_CSV_LIST").unwrap().into(),
+    repo_csv_list: env::var("REPO_CSV_LIST").unwrap().into(),
+    user_login_csv_list: env::var("USER_LOGIN_CSV_LIST").unwrap().into(),
+    repo_name_csv_list: env::var("REPO_NAME_CSV_LIST").unwrap().into(),
+    contribution_csv_list: env::var("CONTRIBUTION_CSV_LIST").unwrap().into(),
+  }
+}
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 pub struct UserCsvEntry {

@@ -1,9 +1,8 @@
 use github_net::{
   add_items,
-  csv_items::{RepoCsvEntry, UserCsvEntry},
+  csv_items::{get_csv_list_paths, RepoCsvEntry, UserCsvEntry},
   db, Repo, User,
 };
-use std::path::PathBuf;
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -12,20 +11,18 @@ use structopt::StructOpt;
   about = "fill the database (postgres) from .csv.gz files"
 )]
 struct Opt {
-  #[structopt(parse(from_os_str))]
-  user_csv_list: PathBuf,
-
-  #[structopt(parse(from_os_str))]
-  repo_csv_list: PathBuf,
+  // no options right now
 }
 
 pub fn main() -> anyhow::Result<()> {
-  let opt = Opt::from_args();
+  let _ = Opt::from_args();
+
+  let items = get_csv_list_paths();
 
   println!("adding users");
 
   add_items(
-    opt.user_csv_list,
+    items.user_csv_list,
     6,
     |conn, user_csv_entries| -> anyhow::Result<()> {
       let users: Vec<_> = user_csv_entries
@@ -42,13 +39,15 @@ pub fn main() -> anyhow::Result<()> {
   println!("adding repos");
 
   add_items(
-    opt.repo_csv_list,
+    items.repo_csv_list,
     6,
     |conn, repo_csv_entries| -> anyhow::Result<()> {
       let repos: Vec<_> = repo_csv_entries
         .iter()
         .cloned()
-        .map(|RepoCsvEntry { repo_github_id }| Repo { github_id : repo_github_id })
+        .map(|RepoCsvEntry { repo_github_id }| Repo {
+          github_id: repo_github_id,
+        })
         .collect();
       db::add_repos(&conn, &repos)?;
 
