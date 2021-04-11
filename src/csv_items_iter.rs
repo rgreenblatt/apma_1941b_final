@@ -13,7 +13,7 @@ struct CsvItemsIter<T> {
   /// really should be using try_fold instead, but that isn't stabilized
   items: Vec<csv::Result<T>>,
   files_index: usize,
-  reader: Option<csv::Reader<GzDecoder<File>>>,
+  reader: Option<csv::DeserializeRecordsIntoIter<GzDecoder<File>, T>>,
   finished: bool,
   _priv: PhantomData<T>,
 }
@@ -31,7 +31,8 @@ where
         Ok(file) => file,
         Err(e) => return Some(Err(e)),
       };
-      self.reader = Some(csv::Reader::from_reader(GzDecoder::new(file)));
+      self.reader =
+        Some(csv::Reader::from_reader(GzDecoder::new(file)).into_deserialize());
     }
 
     let count = 10_000;
@@ -40,7 +41,6 @@ where
       .reader
       .as_mut()
       .unwrap()
-      .deserialize()
       .into_iter()
       .take(count)
       .collect();
