@@ -1,5 +1,7 @@
 use anyhow::Result;
-use github_net::{degree_dist_csv::save_degree_item, loaded_dataset::Dataset};
+use github_net::{
+  dataset::Dataset, degree_dist_csv::save_degree_item, ItemType,
+};
 use structopt::StructOpt;
 
 #[derive(StructOpt)]
@@ -16,40 +18,24 @@ pub fn main() -> Result<()> {
 
   let dataset = Dataset::load()?;
 
-  let get_count = |items: &[_]| items.len();
+  for &(item_type, name) in &[
+    (ItemType::Repo, "repo_degrees.csv"),
+    (ItemType::User, "user_degrees.csv"),
+  ] {
+    save_degree_item(item_type, &dataset, name, |items: &[_]| items.len())?
+  }
 
-  save_degree_item(
-    &dataset.repo_contributions,
-    &dataset.repo_names,
-    "repo_degrees.csv",
-    get_count,
-  )?;
-  save_degree_item(
-    &dataset.user_contributions,
-    &dataset.user_logins,
-    "user_degrees.csv",
-    get_count,
-  )?;
-
-  let get_total = |items: &[usize]| -> usize {
-    items
-      .iter()
-      .map(|&i| dataset.contributions[i].num as usize)
-      .sum()
-  };
-
-  save_degree_item(
-    &dataset.repo_contributions,
-    &dataset.repo_names,
-    "repo_total_events.csv",
-    get_total,
-  )?;
-  save_degree_item(
-    &dataset.user_contributions,
-    &dataset.user_logins,
-    "user_total_contributions.csv",
-    get_total,
-  )?;
+  for &(item_type, name) in &[
+    (ItemType::User, "user_total_contributions.csv"),
+    (ItemType::Repo, "repo_total_events.csv"),
+  ] {
+    save_degree_item(item_type, &dataset, name, |items: &[usize]| -> usize {
+      items
+        .iter()
+        .map(|&i| dataset.contributions()[i].num as usize)
+        .sum()
+    })?
+  }
 
   Ok(())
 }

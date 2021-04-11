@@ -1,4 +1,4 @@
-use crate::loaded_dataset::EdgeVec;
+use crate::{dataset::Dataset, ItemType};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -15,8 +15,8 @@ pub struct DegreeCsvEntry {
 }
 
 pub fn save_degree_item<F: Fn(&[usize]) -> usize>(
-  contributions: &EdgeVec<usize>,
-  names: &[String],
+  item_type: ItemType,
+  dataset: &Dataset,
   csv_path: &str,
   get_degree: F,
 ) -> Result<()> {
@@ -25,9 +25,9 @@ pub fn save_degree_item<F: Fn(&[usize]) -> usize>(
   fs::create_dir_all(output_data_dir)?;
 
   let mut degree_count = HashMap::new();
-  for (degree, name) in contributions
+  for (degree, name) in dataset.contribution_idxs()[item_type]
     .iter()
-    .zip(names)
+    .zip(&dataset.names()[item_type])
     .map(|(v, name)| (get_degree(v), name.clone()))
   {
     degree_count.entry(degree).or_insert((0, name)).0 += 1;

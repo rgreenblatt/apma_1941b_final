@@ -1,7 +1,16 @@
+pub mod components;
 pub mod csv_items;
+pub mod csv_items_iter;
+pub mod dataset;
 pub mod degree_dist_csv;
+mod edge_vec;
 pub mod github_api;
-pub mod loaded_dataset;
+mod github_types;
+
+pub use edge_vec::EdgeVec;
+pub use github_types::{
+  GithubIDWrapper, HasGithubID, ItemType, Repo, User, UserRepoPair,
+};
 
 #[cfg(test)]
 fn check_error<E: std::error::Error + Eq + Sync + Send + 'static>(
@@ -17,46 +26,4 @@ fn check_error<E: std::error::Error + Eq + Sync + Send + 'static>(
   );
 
   Ok(())
-}
-
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
-pub struct Repo {
-  pub github_id: github_api::ID,
-}
-
-pub trait HasGithubID {
-  fn get_github_id(&self) -> github_api::ID;
-}
-
-pub trait GithubIDWrapper: HasGithubID {
-  fn from_github_id(github_id: github_api::ID) -> Self;
-}
-
-impl HasGithubID for Repo {
-  fn get_github_id(&self) -> github_api::ID {
-    self.github_id
-  }
-}
-
-impl GithubIDWrapper for Repo {
-  fn from_github_id(github_id: github_api::ID) -> Self {
-    Self { github_id }
-  }
-}
-
-#[derive(Hash, Ord, PartialOrd, Eq, PartialEq, Debug, Copy, Clone)]
-pub struct User {
-  pub github_id: github_api::ID,
-}
-
-impl HasGithubID for User {
-  fn get_github_id(&self) -> github_api::ID {
-    self.github_id
-  }
-}
-
-impl GithubIDWrapper for User {
-  fn from_github_id(github_id: github_api::ID) -> Self {
-    Self { github_id }
-  }
 }
