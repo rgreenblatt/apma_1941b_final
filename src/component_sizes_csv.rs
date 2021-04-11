@@ -1,5 +1,7 @@
 use crate::{
-  components::components, dataset::Dataset, output_data::csv_writer,
+  components::components,
+  dataset::Dataset,
+  output_data::{csv_reader, csv_writer},
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -31,4 +33,10 @@ pub fn save_component_sizes(dataset: &Dataset, csv_path: &str) -> Result<()> {
   }
 
   Ok(())
+}
+
+pub fn load_component_sizes(
+  csv_path: &str,
+) -> Result<impl Iterator<Item = csv::Result<ComponentSizeCsvEntry>>> {
+  Ok(csv_reader(csv_path)?.into_deserialize())
 }

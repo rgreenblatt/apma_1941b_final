@@ -15,3 +15,9 @@ pub fn csv_writer(path: &str) -> Result<csv::Writer<File>> {
   let out = csv::Writer::from_writer(file);
   Ok(out)
 }
+
+pub fn csv_reader(path: &str) -> Result<csv::Reader<File>> {
+  let file = File::open(output_data_dir()?.join(path))?;
+  let out = csv::Reader::from_reader(file);
+  Ok(out)
+}
