@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::GithubIDWrapper;
 use crate::{
   csv_items::{
     get_csv_list_paths, ContributionCsvEntry, RepoNameCsvEntry,
@@ -7,6 +9,8 @@ use crate::{
   github_api, EdgeVec, HasGithubID, ItemType, Repo, User, UserRepoPair,
 };
 use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
+#[cfg(test)]
+use proptest::prelude::*;
 use std::{collections::HashMap, hash::Hash};
 use unzip_n::unzip_n;
 
@@ -253,4 +257,48 @@ impl Dataset {
   pub fn load() -> anyhow::Result<Self> {
     Self::load_limited(None)
   }
+}
+
+#[cfg(test)]
+fn strat_contributions(
+  user: impl Strategy<Value = User>,
+  repo: impl Strategy<Value = Repo>,
+  num: impl Strategy<Value = i32> + 'static + Clone,
+  size: impl Into<proptest::collection::SizeRange>,
+) -> impl Strategy<Value = impl IntoIterator<Item = ContributionInput>> {
+  proptest::collection::btree_set((user, repo), size).prop_flat_map(move |v| {
+    proptest::collection::vec(num.clone(), v.len()).prop_map(move |nums| {
+      v.clone()
+        .into_iter()
+        .zip(nums)
+        .map(|((user, repo), num)| ContributionInput { user, repo, num })
+    })
+  })
+}
+
+#[cfg(test)]
+pub fn strategy(
+  num_users: impl Strategy<Value = github_api::ID>,
+  num_repos: impl Strategy<Value = github_api::ID>,
+  contribution_num: impl Strategy<Value = i32> + 'static + Clone,
+  num_contribution: impl Into<proptest::collection::SizeRange> + Clone,
+) -> impl Strategy<Value = Dataset> {
+  (num_users, num_repos).prop_flat_map(move |(num_users, num_repos)| {
+    strat_contributions(
+      (0..num_users).prop_map(GithubIDWrapper::from_github_id),
+      (0..num_repos).prop_map(GithubIDWrapper::from_github_id),
+      contribution_num.clone(),
+      num_contribution.clone(),
+    )
+    .prop_map(move |contributions| {
+      Dataset::new(
+        (0..num_users)
+          .map(|github_id| (User { github_id }, format!("user_{}", github_id))),
+        (0..num_repos)
+          .map(|github_id| (Repo { github_id }, format!("repo_{}", github_id))),
+        contributions,
+        true,
+      )
+    })
+  })
 }

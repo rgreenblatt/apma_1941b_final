@@ -1,8 +1,4 @@
-#[cfg(test)]
-use crate::{dataset::ContributionInput, github_api, Repo, User};
 use crate::{dataset::Dataset, ItemType, UserRepoPair};
-#[cfg(test)]
-use std::{collections::HashSet, iter};
 
 pub type Component = UserRepoPair<Vec<usize>>;
 
@@ -125,227 +121,243 @@ pub fn components(dataset: &Dataset) -> impl Iterator<Item = Component> + '_ {
   }
 }
 
-#[test]
-fn empty() {
-  let dataset = Default::default();
-
-  gen_test(&dataset, iter::empty());
-}
-
 #[cfg(test)]
-fn sort_component(mut component: Component) -> Component {
-  component.repo.sort();
-  component.user.sort();
-  component
-}
+mod test {
+  use super::*;
+  use crate::{
+    dataset::{self, ContributionInput},
+    github_api, Repo, User,
+  };
+  use proptest::prelude::*;
+  use std::{collections::HashSet, iter};
 
-#[cfg(test)]
-fn gen_test_no_expected(dataset: &Dataset) -> HashSet<Component> {
-  let actual: HashSet<_> = components(dataset).map(sort_component).collect();
-  for component in actual.iter() {
-    for &user in &component.user {
-      for &contrib_idx in &dataset.user_contributions()[user] {
-        assert!(component
-          .repo
-          .contains(&dataset.contributions()[contrib_idx].idx.repo));
+  #[test]
+  fn empty() {
+    let dataset = Default::default();
+
+    gen_test(&dataset, iter::empty());
+  }
+
+  fn sort_component(mut component: Component) -> Component {
+    component.repo.sort();
+    component.user.sort();
+    component
+  }
+
+  fn gen_test_no_expected(
+    dataset: &Dataset,
+  ) -> Result<HashSet<Component>, TestCaseError> {
+    let actual: HashSet<_> = components(dataset).map(sort_component).collect();
+    for component in actual.iter() {
+      for (item_type, idxs) in component.as_ref().iter_with_types() {
+        for &idx in idxs {
+          for &contrib_idx in dataset.contribution_idxs()[item_type][idx].iter()
+          {
+            proptest::prop_assert!(component[item_type.other()].contains(
+              &dataset.contributions()[contrib_idx].idx[item_type.other()]
+            ));
+          }
+        }
       }
     }
-    for &repo in &component.repo {
-      for &contrib_idx in &dataset.repo_contributions()[repo] {
-        assert!(component
-          .user
-          .contains(&dataset.contributions()[contrib_idx].idx.user));
-      }
-    }
+    Ok(actual)
   }
-  actual
-}
 
-#[cfg(test)]
-fn gen_test(
-  dataset: &Dataset,
-  expected_components: impl IntoIterator<Item = Component>,
-) {
-  let expected: HashSet<_> = expected_components
-    .into_iter()
-    .map(sort_component)
-    .collect();
-  let actual = gen_test_no_expected(dataset);
-  assert_eq!(actual, expected);
-}
-
-#[cfg(test)]
-fn users(n: github_api::ID) -> impl Iterator<Item = (User, String)> {
-  (0..n).map(|github_id| (User { github_id }, "".to_owned()))
-}
-
-#[cfg(test)]
-fn repos(n: github_api::ID) -> impl Iterator<Item = (Repo, String)> {
-  (0..n).map(|github_id| (Repo { github_id }, "".to_owned()))
-}
-
-#[test]
-fn single_user() {
-  let dataset = Dataset::new(users(1), iter::empty(), iter::empty(), true);
-  gen_test(
-    &dataset,
-    vec![Component {
-      user: vec![0],
-      repo: Vec::new(),
-    }],
-  );
-}
-
-#[test]
-fn single_repo() {
-  let dataset = Dataset::new(iter::empty(), repos(1), iter::empty(), true);
-
-  gen_test(
-    &dataset,
-    vec![Component {
-      user: Vec::new(),
-      repo: vec![0],
-    }],
-  );
-}
-
-#[cfg(test)]
-fn contrib(
-  user_github_id: github_api::ID,
-  repo_github_id: github_api::ID,
-) -> ContributionInput {
-  ContributionInput {
-    user: User {
-      github_id: user_github_id,
-    },
-    repo: Repo {
-      github_id: repo_github_id,
-    },
-    num: 1,
+  fn gen_test(
+    dataset: &Dataset,
+    expected_components: impl IntoIterator<Item = Component>,
+  ) {
+    let expected: HashSet<_> = expected_components
+      .into_iter()
+      .map(sort_component)
+      .collect();
+    let actual = gen_test_no_expected(dataset).unwrap();
+    assert_eq!(actual, expected);
   }
-}
 
-#[test]
-fn small_disconnected() {
-  for &count in &[1, 2, 3, 8] {
-    let dataset = Dataset::new(
-      users(count),
-      repos(count),
-      (0..count).into_iter().map(|i| contrib(i, i)),
-      false,
-    );
+  fn users(n: github_api::ID) -> impl Iterator<Item = (User, String)> {
+    (0..n).map(|github_id| (User { github_id }, "".to_owned()))
+  }
 
+  fn repos(n: github_api::ID) -> impl Iterator<Item = (Repo, String)> {
+    (0..n).map(|github_id| (Repo { github_id }, "".to_owned()))
+  }
+
+  #[test]
+  fn single_user() {
+    let dataset = Dataset::new(users(1), iter::empty(), iter::empty(), true);
     gen_test(
       &dataset,
-      (0..count as usize).into_iter().map(|i| Component {
-        user: vec![i],
-        repo: vec![i],
-      }),
+      vec![Component {
+        user: vec![0],
+        repo: Vec::new(),
+      }],
     );
   }
-}
 
-#[test]
-fn fully_connected() {
-  for &count in &[1, 2, 3, 8] {
-    let dataset = Dataset::new(
-      users(count),
-      repos(count),
-      (0..count)
-        .into_iter()
-        .map(|i| contrib(i, i))
-        .chain((0..count - 1).into_iter().map(|i| contrib(i, i + 1))),
-      false,
-    );
-
+  #[test]
+  fn single_repo() {
+    let dataset = Dataset::new(iter::empty(), repos(1), iter::empty(), true);
     gen_test(
       &dataset,
-      iter::once(Component {
-        user: (0..count as usize).collect(),
-        repo: (0..count as usize).collect(),
-      }),
-    );
-  }
-}
-
-#[test]
-fn two_dense_components() {
-  let contributions = vec![
-    contrib(0, 0),
-    contrib(1, 0),
-    contrib(5, 0),
-    contrib(3, 0),
-    contrib(0, 1),
-    contrib(3, 2),
-    contrib(5, 2),
-    contrib(5, 3),
-    contrib(4, 4),
-    contrib(6, 5),
-    contrib(7, 5),
-    contrib(2, 6),
-    contrib(2, 7),
-    contrib(7, 7),
-    contrib(4, 7),
-  ];
-  let dataset = Dataset::new(users(8), repos(8), contributions, false);
-
-  gen_test(
-    &dataset,
-    vec![
-      Component {
-        user: vec![0, 1, 3, 5],
-        repo: vec![0, 1, 2, 3],
-      },
-      Component {
-        user: vec![2, 4, 6, 7],
-        repo: vec![4, 5, 6, 7],
-      },
-    ],
-  );
-}
-
-#[test]
-fn two_dense_components_several_diconnected() {
-  let contributions = vec![
-    contrib(0, 1),
-    contrib(1, 2),
-    contrib(3, 2),
-    contrib(5, 2),
-    contrib(0, 3),
-    contrib(5, 3),
-    contrib(4, 4),
-    contrib(6, 5),
-    contrib(7, 5),
-    contrib(2, 6),
-    contrib(2, 7),
-    contrib(7, 7),
-    contrib(4, 7),
-  ];
-  let dataset = Dataset::new(users(9), repos(9), contributions, false);
-
-  gen_test(
-    &dataset,
-    vec![
-      Component {
-        user: vec![],
+      vec![Component {
+        user: Vec::new(),
         repo: vec![0],
+      }],
+    );
+  }
+
+  fn contrib(
+    user_github_id: github_api::ID,
+    repo_github_id: github_api::ID,
+  ) -> ContributionInput {
+    ContributionInput {
+      user: User {
+        github_id: user_github_id,
       },
-      Component {
-        user: vec![0, 1, 3, 5],
-        repo: vec![1, 2, 3],
+      repo: Repo {
+        github_id: repo_github_id,
       },
-      Component {
-        user: vec![2, 4, 6, 7],
-        repo: vec![4, 5, 6, 7],
-      },
-      Component {
-        user: vec![8],
-        repo: vec![],
-      },
-      Component {
-        user: vec![],
-        repo: vec![8],
-      },
-    ],
-  );
+      num: 1,
+    }
+  }
+
+  #[test]
+  fn small_disconnected() {
+    for &count in &[1, 2, 3, 8] {
+      let dataset = Dataset::new(
+        users(count),
+        repos(count),
+        (0..count).into_iter().map(|i| contrib(i, i)),
+        false,
+      );
+
+      gen_test(
+        &dataset,
+        (0..count as usize).into_iter().map(|i| Component {
+          user: vec![i],
+          repo: vec![i],
+        }),
+      );
+    }
+  }
+
+  #[test]
+  fn fully_connected() {
+    for &count in &[1, 2, 3, 8] {
+      let dataset = Dataset::new(
+        users(count),
+        repos(count),
+        (0..count)
+          .into_iter()
+          .map(|i| contrib(i, i))
+          .chain((0..count - 1).into_iter().map(|i| contrib(i, i + 1))),
+        false,
+      );
+
+      gen_test(
+        &dataset,
+        iter::once(Component {
+          user: (0..count as usize).collect(),
+          repo: (0..count as usize).collect(),
+        }),
+      );
+    }
+  }
+
+  #[test]
+  fn two_dense_components() {
+    let contributions = vec![
+      contrib(0, 0),
+      contrib(1, 0),
+      contrib(5, 0),
+      contrib(3, 0),
+      contrib(0, 1),
+      contrib(3, 2),
+      contrib(5, 2),
+      contrib(5, 3),
+      contrib(4, 4),
+      contrib(6, 5),
+      contrib(7, 5),
+      contrib(2, 6),
+      contrib(2, 7),
+      contrib(7, 7),
+      contrib(4, 7),
+    ];
+    let dataset = Dataset::new(users(8), repos(8), contributions, false);
+
+    gen_test(
+      &dataset,
+      vec![
+        Component {
+          user: vec![0, 1, 3, 5],
+          repo: vec![0, 1, 2, 3],
+        },
+        Component {
+          user: vec![2, 4, 6, 7],
+          repo: vec![4, 5, 6, 7],
+        },
+      ],
+    );
+  }
+
+  #[test]
+  fn two_dense_components_several_diconnected() {
+    let contributions = vec![
+      contrib(0, 1),
+      contrib(1, 2),
+      contrib(3, 2),
+      contrib(5, 2),
+      contrib(0, 3),
+      contrib(5, 3),
+      contrib(4, 4),
+      contrib(6, 5),
+      contrib(7, 5),
+      contrib(2, 6),
+      contrib(2, 7),
+      contrib(7, 7),
+      contrib(4, 7),
+    ];
+    let dataset = Dataset::new(users(9), repos(9), contributions, false);
+
+    gen_test(
+      &dataset,
+      vec![
+        Component {
+          user: vec![],
+          repo: vec![0],
+        },
+        Component {
+          user: vec![0, 1, 3, 5],
+          repo: vec![1, 2, 3],
+        },
+        Component {
+          user: vec![2, 4, 6, 7],
+          repo: vec![4, 5, 6, 7],
+        },
+        Component {
+          user: vec![8],
+          repo: vec![],
+        },
+        Component {
+          user: vec![],
+          repo: vec![8],
+        },
+      ],
+    );
+  }
+
+  proptest::proptest! {
+      #[test]
+      fn proptest_components(
+        dataset in dataset::strategy(
+          1 as github_api::ID..100,
+          1 as github_api::ID..100,
+          1 as i32..=2,
+          1usize..1000,
+        ),
+      ) {
+        gen_test_no_expected(&dataset)?;
+      }
+  }
 }

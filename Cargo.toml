@@ -21,3 +21,6 @@ structopt = "0.3"
 indicatif = "0.15"
 base64 = "0.13"
 unzip-n = "0.1"
+
+[dev-dependencies]
+proptest = "0.10"

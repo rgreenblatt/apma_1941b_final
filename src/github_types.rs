@@ -95,6 +95,11 @@ impl<T> UserRepoPair<T> {
       repo: f(self.repo),
     }
   }
+
+  pub fn iter_with_types(self) -> impl Iterator<Item = (ItemType, T)> {
+    iter::once((ItemType::User, self.user))
+      .chain(iter::once((ItemType::Repo, self.repo)))
+  }
 }
 
 impl<T> IntoIterator for UserRepoPair<T> {
