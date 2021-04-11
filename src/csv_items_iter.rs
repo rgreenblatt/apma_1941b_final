@@ -28,8 +28,8 @@ where
       let file = File::open(self.files.get(self.files_index)?);
       self.files_index += 1;
       let file = match file {
-        Err(e) => return Some(Err(e.into())),
         Ok(file) => file,
+        Err(e) => return Some(Err(e)),
       };
       self.reader = Some(csv::Reader::from_reader(GzDecoder::new(file)));
     }

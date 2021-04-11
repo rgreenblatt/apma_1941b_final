@@ -27,6 +27,8 @@ pub struct Dataset {
 
 unzip_n!(3);
 
+type CollectedItems<T> = (Vec<T>, Vec<String>, HashMap<T, usize>);
+
 #[derive(Clone, Copy, Debug)]
 pub struct ContributionInput {
   pub user: User,
@@ -85,9 +87,7 @@ impl Dataset {
     &self.contribution_idxs_v
   }
 
-  fn collect_items<I, T, E>(
-    iter: I,
-  ) -> Result<(Vec<T>, Vec<String>, HashMap<T, usize>), E>
+  fn collect_items<I, T, E>(iter: I) -> Result<CollectedItems<T>, E>
   where
     I: IntoIterator<Item = Result<(T, String), E>>,
     T: Hash + Eq + Clone,
@@ -117,10 +117,11 @@ impl Dataset {
     let mut user_contributions = vec![Vec::new(); users_v.len()];
     let mut repo_contributions = vec![Vec::new(); repos_v.len()];
 
+    let mut total = 0;
+
     let contributions_v = contributions_iter
       .into_iter()
-      .enumerate()
-      .filter_map(|(idx, v)| match v {
+      .filter_map(|v| match v {
         Ok(ContributionInput { repo, user, num }) => {
           let (user_idx, repo_idx) =
             (user_to_idx.get(&user), repo_to_idx.get(&repo));
@@ -133,8 +134,10 @@ impl Dataset {
               return None;
             };
 
-          user_contributions[user_idx].push(idx);
-          repo_contributions[repo_idx].push(idx);
+          user_contributions[user_idx].push(total);
+          repo_contributions[repo_idx].push(total);
+
+          total += 1;
 
           let contribution = Contribution {
             idx: UserRepoPair {
@@ -168,6 +171,16 @@ impl Dataset {
       contribution_idxs_v,
     };
 
+    #[cfg(debug_assertions)]
+    out
+      .contribution_idxs_v
+      .as_ref()
+      .into_iter()
+      .flat_map(|v| v.iter().flat_map(|v| v.iter()))
+      .for_each(|&idx| {
+        debug_assert!(idx < out.contributions_v.len());
+      });
+
     Ok(out)
   }
 
@@ -184,15 +197,15 @@ impl Dataset {
   {
     // should be never type
     let out: Result<Self, ()> = Self::new_error(
-      user_iter.into_iter().map(|v| Ok(v)),
-      repo_iter.into_iter().map(|v| Ok(v)),
-      contributions_iter.into_iter().map(|v| Ok(v)),
+      user_iter.into_iter().map(Ok),
+      repo_iter.into_iter().map(Ok),
+      contributions_iter.into_iter().map(Ok),
       all_contributions_must_be_used,
     );
     out.unwrap()
   }
 
-  fn gen_load(limit: Option<usize>) -> anyhow::Result<Self> {
+  pub fn load_limited(limit: Option<usize>) -> anyhow::Result<Self> {
     let items = get_csv_list_paths();
 
     let get_bar = || {
@@ -237,7 +250,7 @@ impl Dataset {
         )
       });
 
-    let out = if let Some(limit) = limit {
+    if let Some(limit) = limit {
       Self::new_error(
         user_iter.take(limit),
         repo_iter.take(limit),
@@ -246,16 +259,10 @@ impl Dataset {
       )
     } else {
       Self::new_error(user_iter, repo_iter, contributions_iter, true)
-    };
-
-    out
+    }
   }
 
   pub fn load() -> anyhow::Result<Self> {
-    Self::gen_load(None)
-  }
-
-  pub fn load_limited(limit: usize) -> anyhow::Result<Self> {
-    Self::gen_load(Some(limit))
+    Self::load_limited(None)
   }
 }

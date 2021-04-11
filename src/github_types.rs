@@ -1,5 +1,5 @@
 use crate::github_api;
-use std::ops;
+use std::{iter, ops};
 
 pub trait HasGithubID {
   fn get_github_id(&self) -> github_api::ID;
@@ -94,6 +94,15 @@ impl<T> UserRepoPair<T> {
       user: f(self.user),
       repo: f(self.repo),
     }
+  }
+}
+
+impl<T> IntoIterator for UserRepoPair<T> {
+  type Item = T;
+  type IntoIter = iter::Chain<iter::Once<T>, iter::Once<T>>;
+
+  fn into_iter(self) -> Self::IntoIter {
+    iter::once(self.user).chain(iter::once(self.repo))
   }
 }
 

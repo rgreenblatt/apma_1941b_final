@@ -1,3 +1,4 @@
+pub mod component_sizes_csv;
 pub mod components;
 pub mod csv_items;
 pub mod csv_items_iter;
@@ -6,6 +7,7 @@ pub mod degree_dist_csv;
 mod edge_vec;
 pub mod github_api;
 mod github_types;
+pub mod output_data;
 
 pub use edge_vec::EdgeVec;
 pub use github_types::{

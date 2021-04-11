@@ -14,7 +14,7 @@ struct Opt {
 pub fn main() -> anyhow::Result<()> {
   let Opt { owner, name } = Opt::from_args();
 
-  println!("id is {}", get_repo(owner.clone(), name.clone())?.github_id);
+  println!("id is {}", get_repo(owner, name)?.github_id);
 
   Ok(())
 }

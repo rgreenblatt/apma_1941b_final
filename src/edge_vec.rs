@@ -1,4 +1,4 @@
-use std::{ops, iter::FromIterator};
+use std::{iter::FromIterator, ops};
 
 #[derive(Clone, Debug)]
 pub struct EdgeVec<T> {

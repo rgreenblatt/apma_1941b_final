@@ -1,10 +1,10 @@
 #[cfg(test)]
-use crate::{github_api, dataset::ContributionInput, Repo, User};
+use crate::{dataset::ContributionInput, github_api, Repo, User};
 use crate::{dataset::Dataset, ItemType, UserRepoPair};
 #[cfg(test)]
 use std::{collections::HashSet, iter};
 
-type Component = UserRepoPair<Vec<usize>>;
+pub type Component = UserRepoPair<Vec<usize>>;
 
 struct ComponentIterator<'a> {
   dataset: &'a Dataset,

@@ -1,11 +1,7 @@
-use crate::{dataset::Dataset, ItemType};
+use crate::{dataset::Dataset, output_data::csv_writer, ItemType};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{
-  collections::HashMap,
-  fs::{self, File},
-  path::Path,
-};
+use std::collections::HashMap;
 
 #[derive(Deserialize, Serialize)]
 pub struct DegreeCsvEntry {
@@ -20,10 +16,6 @@ pub fn save_degree_item<F: Fn(&[usize]) -> usize>(
   csv_path: &str,
   get_degree: F,
 ) -> Result<()> {
-  let output_data_dir = Path::new("output_data/");
-
-  fs::create_dir_all(output_data_dir)?;
-
   let mut degree_count = HashMap::new();
   for (degree, name) in dataset.contribution_idxs()[item_type]
     .iter()
@@ -33,8 +25,7 @@ pub fn save_degree_item<F: Fn(&[usize]) -> usize>(
     degree_count.entry(degree).or_insert((0, name)).0 += 1;
   }
 
-  let mut csv_writer =
-    csv::Writer::from_writer(File::create(output_data_dir.join(csv_path))?);
+  let mut writer = csv_writer(csv_path)?;
 
   let mut degree_count: Vec<_> = degree_count.into_iter().collect();
   degree_count.sort_unstable_by_key(|item| item.0);
@@ -43,7 +34,7 @@ pub fn save_degree_item<F: Fn(&[usize]) -> usize>(
     if degree < 1 {
       continue;
     }
-    csv_writer.serialize(DegreeCsvEntry {
+    writer.serialize(DegreeCsvEntry {
       degree,
       count,
       example_name,
