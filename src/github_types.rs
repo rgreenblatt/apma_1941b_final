@@ -43,7 +43,7 @@ impl GithubIDWrapper for Repo {
   }
 }
 
-#[derive(Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone, Hash)]
 pub enum ItemType {
   User,
   Repo,
@@ -86,6 +86,17 @@ impl<T> UserRepoPair<T> {
     UserRepoPair {
       user: &mut self.user,
       repo: &mut self.repo,
+    }
+  }
+
+  pub fn as_tup(self) -> (T, T) {
+    (self.user, self.repo)
+  }
+
+  pub fn as_tup_with_first(self, item_type: ItemType) -> (T, T) {
+    match item_type {
+      ItemType::User => (self.user, self.repo),
+      ItemType::Repo => (self.repo, self.user),
     }
   }
 

@@ -8,6 +8,7 @@ mod edge_vec;
 pub mod github_api;
 mod github_types;
 pub mod output_data;
+pub mod traversal;
 
 pub use edge_vec::EdgeVec;
 pub use github_types::{

@@ -1,6 +1,8 @@
-use crate::{dataset::Dataset, ItemType, UserRepoPair};
-
-pub type Component = UserRepoPair<Vec<usize>>;
+use crate::{
+  dataset::Dataset,
+  traversal::{default_visited, traverse, Component, StartComponent},
+  ItemType, UserRepoPair,
+};
 
 struct ComponentIterator<'a> {
   dataset: &'a Dataset,
@@ -19,13 +21,16 @@ impl<'a> ComponentIterator<'a> {
       .map(|(i, _)| i)
   }
 
-  fn lookup_orig_update(&mut self, item_type: ItemType) -> Vec<usize> {
-    let orig_idx = self.next_to_visit[item_type].unwrap_or(0);
-    let orig = Self::find(&self.visited[item_type][orig_idx..])
-      .map(|i| i + orig_idx)
-      .or_else(|| Self::find(&self.visited[item_type][..orig_idx]));
+  fn lookup_start_component_update(
+    &mut self,
+    item_type: ItemType,
+  ) -> Option<StartComponent> {
+    let to_visit_idx = self.next_to_visit[item_type].unwrap_or(0);
+    let start_idx = Self::find(&self.visited[item_type][to_visit_idx..])
+      .map(|i| i + to_visit_idx)
+      .or_else(|| Self::find(&self.visited[item_type][..to_visit_idx]));
 
-    self.next_to_visit[item_type] = orig.and_then(|i| {
+    self.next_to_visit[item_type] = start_idx.and_then(|i| {
       let idx = i + 1;
       self.visited[item_type].get(idx).and_then(|is_visited| {
         if !is_visited {
@@ -35,44 +40,7 @@ impl<'a> ComponentIterator<'a> {
         }
       })
     });
-    if let Some(idx) = orig {
-      self.visited[item_type][idx] = true;
-    }
-    orig.into_iter().collect()
-  }
-
-  fn do_traversal(
-    &mut self,
-    item_type: ItemType,
-    start: &mut UserRepoPair<usize>,
-    component: &mut Component,
-    dataset: &Dataset,
-  ) {
-    let start = &mut start[item_type];
-    let (idxs, other_idxs) = match item_type {
-      ItemType::User => (&component.user, &mut component.repo),
-      ItemType::Repo => (&component.repo, &mut component.user),
-    };
-    for &idx in &idxs[*start..] {
-      other_idxs.extend(
-        dataset.contribution_idxs()[item_type][idx]
-          .iter()
-          .filter_map(|&i| {
-            let other_idx = dataset.contributions()[i].idx[item_type.other()];
-            let other_visited = &mut self.visited[item_type.other()][other_idx];
-            if *other_visited {
-              None
-            } else {
-              *other_visited = true;
-              Some(other_idx)
-            }
-          }),
-      );
-      if Some(idx) == self.next_to_visit[item_type] {
-        self.next_to_visit[item_type] = Some(idx + 1);
-      }
-    }
-    *start = component[item_type].len();
+    start_idx.map(|idx| StartComponent { item_type, idx })
   }
 }
 
@@ -80,34 +48,38 @@ impl<'a> Iterator for ComponentIterator<'a> {
   type Item = Component;
 
   fn next(&mut self) -> Option<Self::Item> {
-    let mut component = Component {
-      user: Vec::new(),
-      repo: self.lookup_orig_update(ItemType::Repo),
+    let start =
+      [ItemType::Repo, ItemType::User]
+        .iter()
+        .fold(None, |op, &item_type| {
+          op.or_else(|| self.lookup_start_component_update(item_type))
+        });
+
+    let mut component = if let Some(start) = start {
+      start.set_visited(&mut self.visited);
+      start.into()
+    } else {
+      self.empty = true;
+      debug_assert!(
+        self.visited.user.iter().all(|&v| v)
+          && self.visited.repo.iter().all(|&v| v)
+      );
+      return None;
     };
 
-    if component.repo.is_empty() {
-      component.user = self.lookup_orig_update(ItemType::User);
-      if component.user.is_empty() {
-        self.empty = true;
-        debug_assert!(
-          self.visited.user.iter().all(|&v| v)
-            && self.visited.repo.iter().all(|&v| v)
-        );
-        return None;
-      }
-    }
+    let next_to_visit = &mut self.next_to_visit;
 
-    let mut start = UserRepoPair { user: 0, repo: 0 };
-
-    loop {
-      for &item in &[ItemType::Repo, ItemType::User] {
-        self.do_traversal(item, &mut start, &mut component, self.dataset);
-      }
-
-      if component.repo[start.repo..].is_empty() {
-        break;
-      }
-    }
+    traverse(
+      &mut component,
+      &mut self.visited,
+      self.dataset,
+      None,
+      |item_type, idx| {
+        if Some(idx) == next_to_visit[item_type] {
+          next_to_visit[item_type] = Some(idx + 1);
+        }
+      },
+    );
 
     Some(component)
   }
@@ -115,7 +87,7 @@ impl<'a> Iterator for ComponentIterator<'a> {
 pub fn components(dataset: &Dataset) -> impl Iterator<Item = Component> + '_ {
   ComponentIterator {
     dataset,
-    visited: dataset.names().as_ref().map(|v| vec![false; v.len()]),
+    visited: default_visited(dataset),
     next_to_visit: UserRepoPair::same(None),
     empty: false,
   }
@@ -124,10 +96,12 @@ pub fn components(dataset: &Dataset) -> impl Iterator<Item = Component> + '_ {
 #[cfg(test)]
 mod test {
   use super::*;
-  use crate::{
-    dataset::{self, ContributionInput},
-    github_api, Repo, User,
+  use crate::traversal::test::{
+    fully_connected_dataset, single_repo_dataset, single_user_dataset,
+    small_disconnected_dataset, two_dense_components_dataset,
+    two_dense_components_several_disconnected_dataset,
   };
+  use crate::{dataset, github_api};
   use proptest::prelude::*;
   use std::{collections::HashSet, iter};
 
@@ -175,17 +149,9 @@ mod test {
     assert_eq!(actual, expected);
   }
 
-  fn users(n: github_api::ID) -> impl Iterator<Item = (User, String)> {
-    (0..n).map(|github_id| (User { github_id }, "".to_owned()))
-  }
-
-  fn repos(n: github_api::ID) -> impl Iterator<Item = (Repo, String)> {
-    (0..n).map(|github_id| (Repo { github_id }, "".to_owned()))
-  }
-
   #[test]
   fn single_user() {
-    let dataset = Dataset::new(users(1), iter::empty(), iter::empty(), true);
+    let dataset = single_user_dataset();
     gen_test(
       &dataset,
       vec![Component {
@@ -197,7 +163,7 @@ mod test {
 
   #[test]
   fn single_repo() {
-    let dataset = Dataset::new(iter::empty(), repos(1), iter::empty(), true);
+    let dataset = single_repo_dataset();
     gen_test(
       &dataset,
       vec![Component {
@@ -207,30 +173,10 @@ mod test {
     );
   }
 
-  fn contrib(
-    user_github_id: github_api::ID,
-    repo_github_id: github_api::ID,
-  ) -> ContributionInput {
-    ContributionInput {
-      user: User {
-        github_id: user_github_id,
-      },
-      repo: Repo {
-        github_id: repo_github_id,
-      },
-      num: 1,
-    }
-  }
-
   #[test]
   fn small_disconnected() {
     for &count in &[1, 2, 3, 8] {
-      let dataset = Dataset::new(
-        users(count),
-        repos(count),
-        (0..count).into_iter().map(|i| contrib(i, i)),
-        false,
-      );
+      let dataset = small_disconnected_dataset(count);
 
       gen_test(
         &dataset,
@@ -245,15 +191,7 @@ mod test {
   #[test]
   fn fully_connected() {
     for &count in &[1, 2, 3, 8] {
-      let dataset = Dataset::new(
-        users(count),
-        repos(count),
-        (0..count)
-          .into_iter()
-          .map(|i| contrib(i, i))
-          .chain((0..count - 1).into_iter().map(|i| contrib(i, i + 1))),
-        false,
-      );
+      let dataset = fully_connected_dataset(count);
 
       gen_test(
         &dataset,
@@ -267,24 +205,7 @@ mod test {
 
   #[test]
   fn two_dense_components() {
-    let contributions = vec![
-      contrib(0, 0),
-      contrib(1, 0),
-      contrib(5, 0),
-      contrib(3, 0),
-      contrib(0, 1),
-      contrib(3, 2),
-      contrib(5, 2),
-      contrib(5, 3),
-      contrib(4, 4),
-      contrib(6, 5),
-      contrib(7, 5),
-      contrib(2, 6),
-      contrib(2, 7),
-      contrib(7, 7),
-      contrib(4, 7),
-    ];
-    let dataset = Dataset::new(users(8), repos(8), contributions, false);
+    let dataset = two_dense_components_dataset();
 
     gen_test(
       &dataset,
@@ -302,23 +223,8 @@ mod test {
   }
 
   #[test]
-  fn two_dense_components_several_diconnected() {
-    let contributions = vec![
-      contrib(0, 1),
-      contrib(1, 2),
-      contrib(3, 2),
-      contrib(5, 2),
-      contrib(0, 3),
-      contrib(5, 3),
-      contrib(4, 4),
-      contrib(6, 5),
-      contrib(7, 5),
-      contrib(2, 6),
-      contrib(2, 7),
-      contrib(7, 7),
-      contrib(4, 7),
-    ];
-    let dataset = Dataset::new(users(9), repos(9), contributions, false);
+  fn two_dense_components_several_disconnected() {
+    let dataset = two_dense_components_several_disconnected_dataset();
 
     gen_test(
       &dataset,
