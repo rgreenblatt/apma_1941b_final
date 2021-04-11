@@ -6,9 +6,11 @@ use crate::{
     UserLoginCsvEntry,
   },
   csv_items_iter::csv_items_iter,
-  github_api, EdgeVec, HasGithubID, ItemType, Repo, User, UserRepoPair,
+  github_api,
+  progress_bar::get_bar,
+  EdgeVec, HasGithubID, ItemType, Repo, User, UserRepoPair,
 };
-use indicatif::{ProgressBar, ProgressIterator, ProgressStyle};
+use indicatif::ProgressIterator;
 #[cfg(test)]
 use proptest::prelude::*;
 use std::{collections::HashMap, hash::Hash};
@@ -49,6 +51,10 @@ impl Dataset {
     &self.repos_v
   }
 
+  pub fn names(&self) -> &UserRepoPair<Vec<String>> {
+    &self.names_v
+  }
+
   pub fn user_logins(&self) -> &[String] {
     &self.names()[ItemType::User]
   }
@@ -59,6 +65,10 @@ impl Dataset {
 
   pub fn contributions(&self) -> &[Contribution] {
     &self.contributions_v
+  }
+
+  pub fn contribution_idxs(&self) -> &UserRepoPair<EdgeVec<usize>> {
+    &self.contribution_idxs_v
   }
 
   pub fn user_contributions(&self) -> &EdgeVec<usize> {
@@ -81,14 +91,6 @@ impl Dataset {
         Box::new(self.users().iter().map(HasGithubID::get_github_id))
       }
     }
-  }
-
-  pub fn names(&self) -> &UserRepoPair<Vec<String>> {
-    &self.names_v
-  }
-
-  pub fn contribution_idxs(&self) -> &UserRepoPair<EdgeVec<usize>> {
-    &self.contribution_idxs_v
   }
 
   fn collect_items<T: Hash + Eq + Clone, E>(
@@ -200,15 +202,7 @@ impl Dataset {
   pub fn load_limited(limit: Option<usize>) -> anyhow::Result<Self> {
     let items = get_csv_list_paths();
 
-    let get_bar = || {
-      let bar = ProgressBar::new(!0);
-      bar.set_style(
-        ProgressStyle::default_bar()
-          .template("[{elapsed_precise}] {pos} {per_sec}"),
-      );
-      bar.set_draw_delta(100_000);
-      bar
-    };
+    let get_bar = || get_bar(None, 10_000);
 
     let user_iter = csv_items_iter(items.user_login_csv_list)?
       .progress_with(get_bar())

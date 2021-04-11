@@ -1,96 +1,94 @@
 use crate::{
   dataset::Dataset,
-  traversal::{default_visited, traverse, Component, StartComponent},
-  ItemType, UserRepoPair,
+  traversal::{default_visited, traverse, Component, Node},
+  UserRepoPair,
 };
+use fnv::FnvHashSet as HashSet;
 
-struct ComponentIterator<'a> {
+struct ComponentIterator<'a, F> {
   dataset: &'a Dataset,
   visited: UserRepoPair<Vec<bool>>,
-  next_to_visit: UserRepoPair<Option<usize>>,
+  not_visited: UserRepoPair<HashSet<usize>>,
   empty: bool,
+  callback: F,
 }
 
-impl<'a> ComponentIterator<'a> {
-  fn find(visited: &[bool]) -> Option<usize> {
-    visited
-      .iter()
-      .cloned()
-      .enumerate()
-      .find(|(_, is_visited)| !is_visited)
-      .map(|(i, _)| i)
-  }
-
-  fn lookup_start_component_update(
-    &mut self,
-    item_type: ItemType,
-  ) -> Option<StartComponent> {
-    let to_visit_idx = self.next_to_visit[item_type].unwrap_or(0);
-    let start_idx = Self::find(&self.visited[item_type][to_visit_idx..])
-      .map(|i| i + to_visit_idx)
-      .or_else(|| Self::find(&self.visited[item_type][..to_visit_idx]));
-
-    self.next_to_visit[item_type] = start_idx.and_then(|i| {
-      let idx = i + 1;
-      self.visited[item_type].get(idx).and_then(|is_visited| {
-        if !is_visited {
-          Some(idx)
-        } else {
-          None
-        }
-      })
-    });
-    start_idx.map(|idx| StartComponent { item_type, idx })
-  }
+// split off an arbitrary element from a (non-empty) set
+pub fn pop<T>(set: &mut HashSet<T>) -> Option<T>
+where
+  T: Eq + Clone + std::hash::Hash,
+{
+  let elt = set.iter().next().cloned()?;
+  set.remove(&elt);
+  Some(elt)
 }
 
-impl<'a> Iterator for ComponentIterator<'a> {
+impl<'a, F> Iterator for ComponentIterator<'a, F>
+where
+  F: Fn(Node),
+{
   type Item = Component;
 
   fn next(&mut self) -> Option<Self::Item> {
-    let start =
-      [ItemType::Repo, ItemType::User]
-        .iter()
-        .fold(None, |op, &item_type| {
-          op.or_else(|| self.lookup_start_component_update(item_type))
-        });
+    let start = self
+      .not_visited
+      .as_mut()
+      .iter_with_types()
+      .map(|(item_type, not_visited)| {
+        pop(not_visited).map(|idx| Node { idx, item_type })
+      })
+      .find(|v| v.is_some())
+      .map(|v| v.unwrap());
+
+    let callback = &self.callback;
+    let not_visited = &mut self.not_visited;
+    let mut callback = |node| {
+      callback(node);
+      let Node { item_type, idx } = node;
+      let present = not_visited.as_mut()[item_type].remove(&idx);
+      debug_assert!(present);
+    };
 
     let mut component = if let Some(start) = start {
       start.set_visited(&mut self.visited);
+      callback(start);
       start.into()
     } else {
       self.empty = true;
-      debug_assert!(
+      assert!(
         self.visited.user.iter().all(|&v| v)
           && self.visited.repo.iter().all(|&v| v)
       );
       return None;
     };
 
-    let next_to_visit = &mut self.next_to_visit;
-
     traverse(
       &mut component,
       &mut self.visited,
       self.dataset,
       None,
-      |item_type, idx| {
-        if Some(idx) == next_to_visit[item_type] {
-          next_to_visit[item_type] = Some(idx + 1);
-        }
-      },
+      callback,
     );
 
     Some(component)
   }
 }
-pub fn components(dataset: &Dataset) -> impl Iterator<Item = Component> + '_ {
+
+pub fn components_callback<'a>(
+  dataset: &'a Dataset,
+  callback: impl Fn(Node) + 'a,
+) -> impl Iterator<Item = Component> + 'a {
   ComponentIterator {
     dataset,
     visited: default_visited(dataset),
-    next_to_visit: UserRepoPair::same(None),
+    not_visited: dataset.names().as_ref().map(|v| (0..v.len()).collect()),
     empty: false,
+    callback,
   }
+}
+
+pub fn components(dataset: &Dataset) -> impl Iterator<Item = Component> + '_ {
+  components_callback(dataset, |_| {})
 }
 
 #[cfg(test)]

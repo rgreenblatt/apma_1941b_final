@@ -1,7 +1,8 @@
 use crate::{
-  components::components,
+  components::components_callback,
   dataset::Dataset,
   output_data::{csv_reader, csv_writer},
+  progress_bar::get_bar,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -16,7 +17,18 @@ pub struct ComponentSizeCsvEntry {
 
 pub fn save_component_sizes(dataset: &Dataset, csv_path: &str) -> Result<()> {
   let mut counts = HashMap::new();
-  for item in components(dataset)
+  let bar = get_bar(
+    Some(
+      dataset
+        .names()
+        .as_ref()
+        .into_iter()
+        .map(|v| v.len() as u64)
+        .sum(),
+    ),
+    1000,
+  );
+  for item in components_callback(dataset, |_| bar.inc(1))
     .map(|component| (component.user.len(), component.repo.len()))
   {
     *counts.entry(item).or_insert(0) += 1;

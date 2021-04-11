@@ -37,13 +37,9 @@ where
 
     let count = 10_000;
 
-    self.items = self
-      .reader
-      .as_mut()
-      .unwrap()
-      .into_iter()
-      .take(count)
-      .collect();
+    self
+      .items
+      .extend(self.reader.as_mut().unwrap().into_iter().take(count));
 
     if self.items.len() < count {
       self.reader = None;

@@ -1,7 +1,7 @@
 use crate::{dataset::Dataset, ItemType, UserRepoPair};
 use std::{hash::Hash, iter};
 
-/// construct using StartComponent
+/// construct using Node
 pub type Component = UserRepoPair<Vec<usize>>;
 
 #[derive(Hash, Eq, PartialEq, Default, Debug, Clone)]
@@ -10,7 +10,7 @@ pub struct IdxDist {
   dists_v: Vec<usize>,
 }
 
-/// construct using StartComponent
+/// construct using Node
 pub type ComponentDists = UserRepoPair<IdxDist>;
 
 impl IdxDist {
@@ -41,27 +41,27 @@ impl IdxDist {
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq, Debug)]
-pub struct StartComponent {
+pub struct Node {
   pub item_type: ItemType,
   pub idx: usize,
 }
 
-impl StartComponent {
-  pub fn set_visited(self, visted: &mut Visited) {
-    visted.as_mut()[self.item_type][self.idx] = true;
+impl Node {
+  pub fn set_visited(self, visited: &mut Visited) {
+    visited.as_mut()[self.item_type][self.idx] = true;
   }
 }
 
-impl From<StartComponent> for Component {
-  fn from(start: StartComponent) -> Self {
+impl From<Node> for Component {
+  fn from(start: Node) -> Self {
     let mut out = Self::default();
     out[start.item_type].push(start.idx);
     out
   }
 }
 
-impl From<StartComponent> for ComponentDists {
-  fn from(start: StartComponent) -> Self {
+impl From<Node> for ComponentDists {
+  fn from(start: Node) -> Self {
     let mut out = Self::default();
     out[start.item_type].add_items(0, iter::once(start.idx));
     out
@@ -79,7 +79,7 @@ pub fn traverse(
   visited: &mut UserRepoPair<Vec<bool>>,
   dataset: &Dataset,
   limit: Option<usize>,
-  callback: impl FnMut(ItemType, usize),
+  callback: impl FnMut(Node),
 ) {
   traverse_gen(component, visited, dataset, limit, callback)
 }
@@ -89,7 +89,7 @@ pub fn traverse_dist(
   visited: &mut UserRepoPair<Vec<bool>>,
   dataset: &Dataset,
   limit: Option<usize>,
-  callback: impl FnMut(ItemType, usize),
+  callback: impl FnMut(Node),
 ) {
   // should be enforced by IdxDist
   #[cfg(debug_assertions)]
@@ -104,7 +104,7 @@ fn traverse_gen(
   visited: &mut UserRepoPair<Vec<bool>>,
   dataset: &Dataset,
   limit: Option<usize>,
-  mut callback: impl FnMut(ItemType, usize),
+  mut callback: impl FnMut(Node),
 ) {
   // one item
   assert!(component.user.idxs().len() + component.repo.idxs().len() <= 1);
@@ -181,7 +181,7 @@ fn traversal_step(
   visited: &mut UserRepoPair<Vec<bool>>,
   component: &mut UserRepoPair<impl ComponentAccess>,
   dataset: &Dataset,
-  callback: &mut impl FnMut(ItemType, usize),
+  callback: &mut impl FnMut(Node),
 ) {
   let start = &mut start[item_type];
   let (idxs, other_idxs) = component.as_mut().as_tup_with_first(item_type);
@@ -195,11 +195,14 @@ fn traversal_step(
           None
         } else {
           *other_visited = true;
+          callback(Node {
+            item_type: item_type.other(),
+            idx: other_idx,
+          });
           Some(other_idx)
         }
       });
     other_idxs.add_items(dist, new_idxs);
-    callback(item_type, idx);
   }
   *start = component[item_type].idxs().len();
 }
@@ -251,14 +254,14 @@ pub mod test {
   }
 
   fn gen_test_no_limit(
-    start: StartComponent,
+    start: Node,
     dataset: &Dataset,
     mut expected_component: Component,
   ) {
     let mut visited = default_visited(dataset);
     start.set_visited(&mut visited);
     let mut component = start.into();
-    traverse(&mut component, &mut visited, dataset, None, |_, _| {});
+    traverse(&mut component, &mut visited, dataset, None, |_| {});
     gen_test_no_limit_no_expected(dataset, &mut component).unwrap();
     sort_component(&mut component);
     sort_component(&mut expected_component);
@@ -266,7 +269,7 @@ pub mod test {
   }
 
   fn gen_test_dists(
-    start: StartComponent,
+    start: Node,
     limit: Option<usize>,
     dataset: &Dataset,
     mut expected_component: ComponentDists,
@@ -274,7 +277,7 @@ pub mod test {
     let mut visited = default_visited(dataset);
     start.set_visited(&mut visited);
     let mut component = start.into();
-    traverse_dist(&mut component, &mut visited, dataset, limit, |_, _| {});
+    traverse_dist(&mut component, &mut visited, dataset, limit, |_| {});
     sort_component(&mut component);
     sort_component(&mut expected_component);
     assert_eq!(component, expected_component);
@@ -296,7 +299,7 @@ pub mod test {
   fn single_user() {
     let dataset = single_user_dataset();
 
-    let start = StartComponent {
+    let start = Node {
       item_type: ItemType::User,
       idx: 0,
     };
@@ -333,7 +336,7 @@ pub mod test {
   #[test]
   fn single_repo() {
     let dataset = single_repo_dataset();
-    let start = StartComponent {
+    let start = Node {
       item_type: ItemType::Repo,
       idx: 0,
     };
@@ -406,7 +409,7 @@ pub mod test {
 
       for idx in 0..count as usize {
         for &item_type in &[ItemType::User, ItemType::Repo] {
-          let start = StartComponent { idx, item_type };
+          let start = Node { idx, item_type };
           gen_test_no_limit(
             start,
             &dataset,
@@ -463,7 +466,7 @@ pub mod test {
 
       for idx in 0..count as usize {
         for &item_type in &[ItemType::User, ItemType::Repo] {
-          let start = StartComponent { idx, item_type };
+          let start = Node { idx, item_type };
           gen_test_no_limit(
             start,
             &dataset,
@@ -559,7 +562,7 @@ pub mod test {
       repo: vec![4, 5, 6, 7],
     };
     gen_test_no_limit(
-      StartComponent {
+      Node {
         item_type: ItemType::User,
         idx: 3,
       },
@@ -567,7 +570,7 @@ pub mod test {
       first_comp.clone(),
     );
     gen_test_no_limit(
-      StartComponent {
+      Node {
         item_type: ItemType::Repo,
         idx: 2,
       },
@@ -575,7 +578,7 @@ pub mod test {
       first_comp.clone(),
     );
     gen_test_no_limit(
-      StartComponent {
+      Node {
         item_type: ItemType::User,
         idx: 4,
       },
@@ -583,7 +586,7 @@ pub mod test {
       second_comp.clone(),
     );
     gen_test_no_limit(
-      StartComponent {
+      Node {
         item_type: ItemType::Repo,
         idx: 6,
       },
@@ -616,7 +619,7 @@ pub mod test {
     let dataset = two_dense_components_several_disconnected_dataset();
 
     gen_test_no_limit(
-      StartComponent {
+      Node {
         item_type: ItemType::Repo,
         idx: 0,
       },
@@ -627,7 +630,7 @@ pub mod test {
       },
     );
     gen_test_no_limit(
-      StartComponent {
+      Node {
         item_type: ItemType::User,
         idx: 5,
       },
