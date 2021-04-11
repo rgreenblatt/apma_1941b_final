@@ -14,7 +14,7 @@ impl<T> EdgeVec<T> {
     }
   }
 
-  pub fn push<V: IntoIterator<Item = T>>(&mut self, items: V) {
+  pub fn push(&mut self, items: impl IntoIterator<Item = T>) {
     self.values.extend(items);
     self.ends.push(self.values.len());
   }

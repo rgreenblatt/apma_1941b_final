@@ -89,7 +89,7 @@ impl<T> UserRepoPair<T> {
     }
   }
 
-  pub fn map<U, F: Fn(T) -> U>(self, f: F) -> UserRepoPair<U> {
+  pub fn map<U>(self, f: impl Fn(T) -> U) -> UserRepoPair<U> {
     UserRepoPair {
       user: f(self.user),
       repo: f(self.repo),

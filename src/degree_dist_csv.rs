@@ -10,11 +10,11 @@ pub struct DegreeCsvEntry {
   pub example_name: String,
 }
 
-pub fn save_degree_item<F: Fn(&[usize]) -> usize>(
+pub fn save_degree_item(
   item_type: ItemType,
   dataset: &Dataset,
   csv_path: &str,
-  get_degree: F,
+  get_degree: impl Fn(&[usize]) -> usize,
 ) -> Result<()> {
   let mut degree_count = HashMap::new();
   for (degree, name) in dataset.contribution_idxs()[item_type]

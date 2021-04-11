@@ -87,11 +87,9 @@ impl Dataset {
     &self.contribution_idxs_v
   }
 
-  fn collect_items<I, T, E>(iter: I) -> Result<CollectedItems<T>, E>
-  where
-    I: IntoIterator<Item = Result<(T, String), E>>,
-    T: Hash + Eq + Clone,
-  {
+  fn collect_items<T: Hash + Eq + Clone, E>(
+    iter: impl IntoIterator<Item = Result<(T, String), E>>,
+  ) -> Result<CollectedItems<T>, E> {
     itertools::process_results(iter, |iter| {
       iter
         .enumerate()
@@ -100,17 +98,12 @@ impl Dataset {
     })
   }
 
-  pub fn new_error<UserIter, RepoIter, ContributionIter, E>(
-    user_iter: UserIter,
-    repo_iter: RepoIter,
-    contributions_iter: ContributionIter,
+  pub fn new_error<E>(
+    user_iter: impl IntoIterator<Item = Result<(User, String), E>>,
+    repo_iter: impl IntoIterator<Item = Result<(Repo, String), E>>,
+    contributions_iter: impl IntoIterator<Item = Result<ContributionInput, E>>,
     all_contributions_must_be_used: bool,
-  ) -> Result<Self, E>
-  where
-    UserIter: IntoIterator<Item = Result<(User, String), E>>,
-    RepoIter: IntoIterator<Item = Result<(Repo, String), E>>,
-    ContributionIter: IntoIterator<Item = Result<ContributionInput, E>>,
-  {
+  ) -> Result<Self, E> {
     let (users_v, user_logins_v, user_to_idx) = Self::collect_items(user_iter)?;
     let (repos_v, repo_names_v, repo_to_idx) = Self::collect_items(repo_iter)?;
 
@@ -184,17 +177,12 @@ impl Dataset {
     Ok(out)
   }
 
-  pub fn new<UserIter, RepoIter, ContributionIter>(
-    user_iter: UserIter,
-    repo_iter: RepoIter,
-    contributions_iter: ContributionIter,
+  pub fn new(
+    user_iter: impl IntoIterator<Item = (User, String)>,
+    repo_iter: impl IntoIterator<Item = (Repo, String)>,
+    contributions_iter: impl IntoIterator<Item = ContributionInput>,
     all_contributions_must_be_used: bool,
-  ) -> Self
-  where
-    UserIter: IntoIterator<Item = (User, String)>,
-    RepoIter: IntoIterator<Item = (Repo, String)>,
-    ContributionIter: IntoIterator<Item = ContributionInput>,
-  {
+  ) -> Self {
     // should be never type
     let out: Result<Self, ()> = Self::new_error(
       user_iter.into_iter().map(Ok),

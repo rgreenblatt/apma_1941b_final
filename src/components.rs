@@ -162,9 +162,9 @@ fn gen_test_no_expected(dataset: &Dataset) -> HashSet<Component> {
 }
 
 #[cfg(test)]
-fn gen_test<E: IntoIterator<Item = Component>>(
+fn gen_test(
   dataset: &Dataset,
-  expected_components: E,
+  expected_components: impl IntoIterator<Item = Component>,
 ) {
   let expected: HashSet<_> = expected_components
     .into_iter()
