@@ -9,7 +9,7 @@ pub use info::{get_repo, get_repo_names, get_user, get_user_logins};
 /// Not really sure about this type (might not be big enough).
 /// Note that this only has to be big enough for users and repos, not for
 /// events.
-pub type ID = i32;
+pub type ID = u32;
 
 #[derive(PartialEq, Eq, Debug)]
 pub struct UnexpectedNullError(String);

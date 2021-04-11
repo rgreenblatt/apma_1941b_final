@@ -48,7 +48,7 @@ pub struct RepoNameCsvEntry {
 pub struct ContributionCsvEntry {
   pub user_github_id: github_api::ID,
   pub repo_github_id: github_api::ID,
-  pub num: i32,
+  pub num: u32,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -353,7 +353,7 @@ mod test {
         dataset in dataset::strategy(
           1 as github_api::ID..100,
           1 as github_api::ID..100,
-          1 as i32..=2,
+          1 as u32..=2,
           1usize..1000,
         ),
       ) {

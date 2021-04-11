@@ -17,7 +17,7 @@ use unzip_n::unzip_n;
 #[derive(Clone, Copy, Debug)]
 pub struct Contribution {
   pub idx: UserRepoPair<usize>,
-  pub num: i32,
+  pub num: u32,
 }
 
 #[derive(Default, Debug)]
@@ -37,7 +37,7 @@ type CollectedItems<T> = (Vec<T>, Vec<String>, HashMap<T, usize>);
 pub struct ContributionInput {
   pub user: User,
   pub repo: Repo,
-  pub num: i32,
+  pub num: u32,
 }
 
 impl Dataset {
@@ -263,7 +263,7 @@ impl Dataset {
 fn strat_contributions(
   user: impl Strategy<Value = User>,
   repo: impl Strategy<Value = Repo>,
-  num: impl Strategy<Value = i32> + 'static + Clone,
+  num: impl Strategy<Value = u32> + 'static + Clone,
   size: impl Into<proptest::collection::SizeRange>,
 ) -> impl Strategy<Value = impl IntoIterator<Item = ContributionInput>> {
   proptest::collection::btree_set((user, repo), size).prop_flat_map(move |v| {
@@ -280,7 +280,7 @@ fn strat_contributions(
 pub fn strategy(
   num_users: impl Strategy<Value = github_api::ID>,
   num_repos: impl Strategy<Value = github_api::ID>,
-  contribution_num: impl Strategy<Value = i32> + 'static + Clone,
+  contribution_num: impl Strategy<Value = u32> + 'static + Clone,
   num_contribution: impl Into<proptest::collection::SizeRange> + Clone,
 ) -> impl Strategy<Value = Dataset> {
   (num_users, num_repos).prop_flat_map(move |(num_users, num_repos)| {
