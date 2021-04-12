@@ -56,6 +56,30 @@ impl Dataset {
     &self.repos_v
   }
 
+  pub fn filter_contributions(&mut self, min_contribution: u32) {
+    if min_contribution == 0 {
+      return;
+    }
+    let mut contributions = UserRepoPair {
+      user: vec![Vec::new(); self.users().len()],
+      repo: vec![Vec::new(); self.repos().len()],
+    };
+
+    self.contributions_v = self
+      .contributions_v
+      .iter()
+      .filter(|contrib| contrib.num >= min_contribution)
+      .enumerate()
+      .map(|(i, contrib)| {
+        for (item_type, idx) in contrib.idx.iter_with_types() {
+          contributions[item_type][idx].push(i)
+        }
+        *contrib
+      })
+      .collect();
+    self.contribution_idxs_v = contributions.map(|v| v.into_iter().collect());
+  }
+
   pub fn names(&self) -> &UserRepoPair<Vec<String>> {
     &self.names_v
   }

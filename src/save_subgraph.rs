@@ -1,18 +1,19 @@
 use crate::{
   dataset::Dataset,
-  output_data::output_data_dir,
   progress_bar::get_bar,
+  projected_graph::ProjectedGraph,
   traversal::{self, default_visited, traverse},
 };
 use anyhow::Result;
 use fnv::{FnvHashMap as Map, FnvHashSet as Set};
-use std::{borrow::Cow, fs::File, io::BufWriter, iter};
+use std::{borrow::Cow, fs::File, io::BufWriter, iter, path::Path};
 
 pub fn save_subgraph(
-  start: traversal::Node,
+  output_dir: &Path,
+  start: usize,
   limit: usize,
   repo_degree_thresh: usize,
-  common_users_thresh: usize,
+  projected_graph: &ProjectedGraph,
   dataset: &Dataset,
 ) -> Result<()> {
   let mut visited = default_visited(dataset);
@@ -31,7 +32,7 @@ pub fn save_subgraph(
   let graph_name = &graph_name;
   let save_name = format!("{}.dot", graph_name);
 
-  let path = output_data_dir()?.join(save_name);
+  let path = output_dir.join(save_name);
   let file = File::create(path)?;
   let mut writer = BufWriter::new(file);
 

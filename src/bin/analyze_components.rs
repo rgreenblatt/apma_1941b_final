@@ -2,9 +2,22 @@ use anyhow::Result;
 use github_net::component_sizes_csv::{
   load_component_sizes, ComponentSizeCsvEntry,
 };
+use std::path::PathBuf;
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+#[structopt(
+  name = "analyze_components",
+  about = "analyze component data from csv"
+)]
+struct Opt {
+  path: PathBuf,
+}
 
 pub fn main() -> Result<()> {
-  let component_sizes: Vec<_> = load_component_sizes("component_sizes.csv")?
+  let opt = Opt::from_args();
+
+  let component_sizes: Vec<_> = load_component_sizes(&opt.path)?
     .collect::<csv::Result<Vec<_>>>()?;
 
   let (total_users, total_repos) = component_sizes.iter().fold(

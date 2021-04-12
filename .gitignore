@@ -1,5 +1,6 @@
 typings/
 
+/excluded_cache
 /figs
 /output_data
 /items

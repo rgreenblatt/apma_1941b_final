@@ -9,7 +9,8 @@ pub mod github_api;
 mod github_types;
 pub mod output_data;
 pub mod progress_bar;
-pub mod save_subgraph;
+pub mod projected_graph;
+// pub mod save_subgraph;
 pub mod traversal;
 
 pub use edge_vec::EdgeVec;

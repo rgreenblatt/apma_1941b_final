@@ -6,7 +6,7 @@ use crate::{
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{path::Path, collections::HashMap};
 
 #[derive(Deserialize, Serialize)]
 pub struct ComponentSizeCsvEntry {
@@ -15,7 +15,7 @@ pub struct ComponentSizeCsvEntry {
   pub count: usize,
 }
 
-pub fn save_component_sizes(dataset: &Dataset, csv_path: &str) -> Result<()> {
+pub fn save_component_sizes(dataset: &Dataset, csv_path: &Path) -> Result<()> {
   let mut counts = HashMap::new();
   let bar = get_bar(
     Some(
@@ -54,7 +54,7 @@ pub fn save_component_sizes(dataset: &Dataset, csv_path: &str) -> Result<()> {
 }
 
 pub fn load_component_sizes(
-  csv_path: &str,
+  csv_path: &Path,
 ) -> Result<impl Iterator<Item = csv::Result<ComponentSizeCsvEntry>>> {
   Ok(csv_reader(csv_path)?.into_deserialize())
 }
