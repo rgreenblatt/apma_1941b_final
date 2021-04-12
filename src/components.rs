@@ -3,20 +3,20 @@ use crate::{
   traversal::{default_visited, traverse, Component, Node},
   UserRepoPair,
 };
-use fnv::FnvHashSet as HashSet;
+/// MUCH better perf on pop
+use std::collections::BTreeSet as Set;
 
 struct ComponentIterator<'a, F> {
   dataset: &'a Dataset,
   visited: UserRepoPair<Vec<bool>>,
-  not_visited: UserRepoPair<HashSet<usize>>,
+  not_visited: UserRepoPair<Set<usize>>,
   empty: bool,
   callback: F,
 }
 
-// split off an arbitrary element from a (non-empty) set
-pub fn pop<T>(set: &mut HashSet<T>) -> Option<T>
+pub fn pop<T>(set: &mut Set<T>) -> Option<T>
 where
-  T: Eq + Clone + std::hash::Hash,
+  T: Eq + Clone + Ord,
 {
   let elt = set.iter().next().cloned()?;
   set.remove(&elt);
@@ -42,12 +42,6 @@ where
 
     let callback = &self.callback;
     let not_visited = &mut self.not_visited;
-    let mut callback = |node| {
-      callback(node);
-      let Node { item_type, idx } = node;
-      let present = not_visited.as_mut()[item_type].remove(&idx);
-      debug_assert!(present);
-    };
 
     let mut component = if let Some(start) = start {
       start.set_visited(&mut self.visited);
@@ -67,7 +61,12 @@ where
       &mut self.visited,
       self.dataset,
       None,
-      callback,
+      |node| {
+        callback(node);
+        let Node { item_type, idx } = node;
+        let present = not_visited.as_mut()[item_type].remove(&idx);
+        debug_assert!(present);
+      },
     );
 
     Some(component)

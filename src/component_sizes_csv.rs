@@ -36,13 +36,19 @@ pub fn save_component_sizes(dataset: &Dataset, csv_path: &str) -> Result<()> {
 
   let mut writer = csv_writer(csv_path)?;
 
+  let mut total_user_size = 0;
+  let mut total_repo_size = 0;
   for ((user_size, repo_size), count) in counts {
+    total_user_size += user_size * count;
+    total_repo_size += repo_size * count;
     writer.serialize(ComponentSizeCsvEntry {
       user_size,
       repo_size,
       count,
     })?;
   }
+  assert_eq!(total_user_size, dataset.names().user.len());
+  assert_eq!(total_repo_size, dataset.names().repo.len());
 
   Ok(())
 }
