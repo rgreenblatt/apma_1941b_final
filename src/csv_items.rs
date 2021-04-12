@@ -22,7 +22,7 @@ pub fn get_csv_list_paths() -> ItemsPaths {
   }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct UserCsvEntry {
   pub github_id: github_api::ID,
 }

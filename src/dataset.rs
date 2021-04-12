@@ -2,7 +2,7 @@
 use crate::GithubIDWrapper;
 use crate::{
   csv_items::{
-    get_csv_list_paths, ContributionCsvEntry, RepoNameCsvEntry,
+    get_csv_list_paths, ContributionCsvEntry, RepoNameCsvEntry, UserCsvEntry,
     UserLoginCsvEntry,
   },
   csv_items_iter::csv_items_iter,
@@ -10,10 +10,15 @@ use crate::{
   progress_bar::get_bar,
   EdgeVec, HasGithubID, ItemType, Repo, User, UserRepoPair,
 };
+use fnv::{FnvHashMap as Map, FnvHashSet as Set};
 use indicatif::ProgressIterator;
 #[cfg(test)]
 use proptest::prelude::*;
-use std::{collections::HashMap, hash::Hash};
+use std::{
+  fs::{self, File},
+  hash::Hash,
+  path::{Path, PathBuf},
+};
 use unzip_n::unzip_n;
 
 #[derive(Clone, Copy, Debug)]
@@ -33,7 +38,7 @@ pub struct Dataset {
 
 unzip_n!(3);
 
-type CollectedItems<T> = (Vec<T>, Vec<String>, HashMap<T, usize>);
+type CollectedItems<T> = (Vec<T>, Vec<String>, Map<T, usize>);
 
 #[derive(Clone, Copy, Debug)]
 pub struct ContributionInput {
@@ -199,17 +204,30 @@ impl Dataset {
     out.unwrap()
   }
 
-  pub fn load_limited(limit: Option<usize>) -> anyhow::Result<Self> {
+  pub fn load_limited_exclude(
+    limit: Option<usize>,
+    users_to_exclude: &Set<User>,
+  ) -> anyhow::Result<Self> {
     let items = get_csv_list_paths();
 
     let get_bar = || get_bar(None, 10_000);
 
     let user_iter = csv_items_iter(items.user_login_csv_list)?
       .progress_with(get_bar())
-      .map(|v| {
-        v.map(|UserLoginCsvEntry { github_id, login }| {
-          (User { github_id }, login)
-        })
+      .filter_map(|v| {
+        let v = v.map(|UserLoginCsvEntry { github_id, login }| {
+          let user = User { github_id };
+          if users_to_exclude.contains(&user) {
+            None
+          } else {
+            Some((user, login))
+          }
+        });
+        match v {
+          Err(e) => Some(Err(e)),
+          Ok(Some(v)) => Some(Ok(v)),
+          Ok(None) => None,
+        }
       });
     let repo_iter = csv_items_iter(items.repo_name_csv_list)?
       .progress_with(get_bar())
@@ -244,12 +262,90 @@ impl Dataset {
         false,
       )
     } else {
-      Self::new_error(user_iter, repo_iter, contributions_iter, true)
+      Self::new_error(
+        user_iter,
+        repo_iter,
+        contributions_iter,
+        users_to_exclude.is_empty(),
+      )
     }
   }
 
-  pub fn load() -> anyhow::Result<Self> {
-    Self::load_limited(None)
+  fn cache_dir() -> &'static Path {
+    Path::new("excluded_cache/")
+  }
+
+  fn excluded_cache_path(thresh: usize) -> PathBuf {
+    let dir: PathBuf = Self::cache_dir().into();
+    dir.join(format!("{}_limit_excluded.csv", thresh))
+  }
+
+  fn cache_lookup(thresh: usize) -> Option<csv::Result<Set<User>>> {
+    let file = File::open(Self::excluded_cache_path(thresh));
+    let file = if let Ok(file) = file {
+      file
+    } else {
+      return None;
+    };
+
+    let out = csv::Reader::from_reader(file)
+      .deserialize()
+      .map(|entry| entry.map(|UserCsvEntry { github_id }| User { github_id }))
+      .collect();
+    Some(out)
+  }
+
+  fn cache_save(thresh: usize, excluded: &Set<User>) -> anyhow::Result<()> {
+    fs::create_dir_all(Self::cache_dir())?;
+    let file = File::create(Self::excluded_cache_path(thresh))?;
+    let mut writer = csv::Writer::from_writer(file);
+    for &User { github_id } in excluded {
+      writer.serialize(UserCsvEntry { github_id })?;
+    }
+
+    Ok(())
+  }
+
+  pub fn load_limited(
+    limit: Option<usize>,
+    user_exclude_degree_thresh: Option<usize>,
+  ) -> anyhow::Result<Self> {
+    if let Some(excluded) =
+      user_exclude_degree_thresh.and_then(Self::cache_lookup)
+    {
+      let excluded = excluded?;
+      return Self::load_limited_exclude(limit, &excluded);
+    }
+    let out = Self::load_limited_exclude(limit, &Default::default());
+    if let Some(thresh) = user_exclude_degree_thresh {
+      let out = out?;
+      let excluded: Set<_> = out
+        .user_contributions()
+        .iter()
+        .zip(out.users())
+        .filter_map(|(contribs, &user)| {
+          if contribs.len() >= thresh {
+            Some(user)
+          } else {
+            None
+          }
+        })
+        .collect();
+
+      if limit.is_none() {
+        Self::cache_save(thresh, &excluded)?;
+      }
+
+      if excluded.is_empty() {
+        return Ok(out);
+      }
+
+      // this is inefficient, but saves memory
+      drop(out);
+      Self::load_limited_exclude(limit, &excluded)
+    } else {
+      out
+    }
   }
 }
 

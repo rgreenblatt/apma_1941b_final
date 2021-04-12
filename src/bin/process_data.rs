@@ -16,6 +16,10 @@ struct Opt {
   #[structopt(short, long)]
   limit: Option<usize>,
 
+  /// Limit the maximum user degree to avoid bots and spammers.
+  #[structopt(long, default_value = "10000")]
+  max_user_degree: usize,
+
   /// Compute degrees and save as csv files.
   #[structopt(short, long)]
   degrees: bool,
@@ -32,8 +36,14 @@ struct Opt {
   #[structopt(long)]
   subgraph_user: Vec<String>,
 
-  #[structopt(long, default_value = "6")]
+  #[structopt(long, default_value = "3")]
   subgraph_limit: usize,
+
+  #[structopt(long, default_value = "10000")]
+  subgraph_min_repo_degree: usize,
+
+  #[structopt(long, default_value = "100")]
+  subgraph_min_common_users: usize,
 }
 
 fn run_degrees(dataset: &Dataset) -> Result<()> {
@@ -63,14 +73,10 @@ fn run_components(dataset: &Dataset) -> Result<()> {
   save_component_sizes(dataset, "component_sizes.csv")
 }
 
-// fn save_subgraph(item_type : ItemType, name : String, limit : usize) -> Result<()> {
-
-// }
-
 pub fn main() -> Result<()> {
   let opt = Opt::from_args();
 
-  let dataset = Dataset::load_limited(opt.limit)?;
+  let dataset = Dataset::load_limited(opt.limit, Some(opt.max_user_degree))?;
 
   if opt.degrees {
     println!("running degrees");
@@ -96,7 +102,13 @@ pub fn main() -> Result<()> {
 
       println!("saving subgraph for {:?} {}", item_type, name);
 
-      save_subgraph(start, opt.subgraph_limit, &dataset)?;
+      save_subgraph(
+        start,
+        opt.subgraph_limit,
+        opt.subgraph_min_repo_degree,
+        opt.subgraph_min_common_users,
+        &dataset,
+      )?;
     }
   }
 
