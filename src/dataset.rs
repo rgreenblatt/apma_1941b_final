@@ -56,6 +56,10 @@ impl Dataset {
     &self.repos_v
   }
 
+  pub fn len(&self, item_type: ItemType) -> usize{
+    self.names()[item_type].len()
+  }
+
   pub fn filter_contributions(&mut self, min_contribution: u32) {
     if min_contribution == 0 {
       return;
@@ -120,6 +124,17 @@ impl Dataset {
         Box::new(self.users().iter().map(HasGithubID::get_github_id))
       }
     }
+  }
+
+  /// *Slowly* find an item (linear search)
+  /// Its faster to iterate for the few we need instead of building a hashmap
+  /// etc.
+  pub fn find_item(&self, item_type: ItemType, name: &str) -> Option<usize> {
+    self.names()[item_type]
+      .iter()
+      .enumerate()
+      .find(|(_, other_name)| other_name == &name)
+      .map(|(idx, _)| idx)
   }
 
   fn collect_items<T: Hash + Eq + Clone, E>(

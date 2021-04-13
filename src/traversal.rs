@@ -1,4 +1,6 @@
-use crate::{dataset::Dataset, ItemType, UserRepoPair};
+use crate::{
+  dataset::Dataset, projected_graph::ProjectedGraph, ItemType, UserRepoPair,
+};
 use std::{hash::Hash, iter};
 
 /// construct using Node
@@ -55,7 +57,7 @@ impl Node {
 impl From<Node> for Component {
   fn from(start: Node) -> Self {
     let mut out = Self::default();
-    out[start.item_type].push(start.idx);
+    out[start.item_type].add_items(0, iter::once(start.idx));
     out
   }
 }
@@ -66,6 +68,18 @@ impl From<Node> for ComponentDists {
     out[start.item_type].add_items(0, iter::once(start.idx));
     out
   }
+}
+
+pub fn projected_make_component(start: usize) -> Vec<usize> {
+  let mut out = Vec::new();
+  out.add_items(0, iter::once(start));
+  out
+}
+
+pub fn projected_make_component_dists(start: usize) -> IdxDist {
+  let mut out = IdxDist::default();
+  out.add_items(0, iter::once(start));
+  out
 }
 
 pub type Visited = UserRepoPair<Vec<bool>>;
@@ -205,6 +219,101 @@ fn traversal_step(
     other_idxs.add_items(dist, new_idxs);
   }
   *start = component[item_type].idxs().len();
+}
+
+pub fn projected_traverse(
+  component: &mut Vec<usize>,
+  visited: &mut Vec<bool>,
+  projected_graph: &ProjectedGraph,
+  limit: Option<usize>,
+  callback: impl FnMut(usize),
+) {
+  projected_traverse_gen(component, visited, projected_graph, limit, callback)
+}
+
+pub fn projected_traverse_dist(
+  component: &mut IdxDist,
+  visited: &mut Vec<bool>,
+  projected_graph: &ProjectedGraph,
+  limit: Option<usize>,
+  callback: impl FnMut(usize),
+) {
+  // should be enforced by IdxDist
+  debug_assert_eq!(component.idxs_v.len(), component.dists_v.len());
+  projected_traverse_gen(component, visited, projected_graph, limit, callback)
+}
+
+fn projected_traverse_gen(
+  component: &mut impl ComponentAccess,
+  visited: &mut Vec<bool>,
+  projected_graph: &ProjectedGraph,
+  limit: Option<usize>,
+  mut callback: impl FnMut(usize),
+) {
+  // one item
+  assert!(component.idxs().len() <= 1);
+  // all items are visited
+  assert!(component.idxs().iter().all(|&i| visited[i]));
+
+  let mut start = 0;
+  let mut dist = 0;
+
+  let limit = limit.unwrap_or(std::usize::MAX);
+
+  let callback = &mut callback;
+
+  loop {
+    dist += 1;
+
+    if dist > limit {
+      break;
+    }
+
+    projected_traversal_step(
+      dist,
+      &mut start,
+      visited,
+      component,
+      projected_graph,
+      callback,
+    );
+
+    if component.idxs()[start..].is_empty() {
+      break;
+    }
+  }
+}
+
+fn projected_traversal_step(
+  dist: usize,
+  start: &mut usize,
+  visited: &mut Vec<bool>,
+  component: &mut impl ComponentAccess,
+  projected_graph: &ProjectedGraph,
+  callback: &mut impl FnMut(usize),
+) {
+  let end = component.idxs().len();
+  for i in *start..end {
+    let idx = component.idxs()[i];
+    let new_idxs = projected_graph.edge_idxs()[idx].iter().filter_map(|&i| {
+      let other_idx = projected_graph.edges()[i]
+        .node_idxs
+        .iter()
+        .cloned()
+        .find(|&other_idx| other_idx != idx)
+        .unwrap();
+      let other_visited = &mut visited[other_idx];
+      if *other_visited {
+        None
+      } else {
+        *other_visited = true;
+        callback(other_idx);
+        Some(other_idx)
+      }
+    });
+    component.add_items(dist, new_idxs);
+  }
+  *start = end;
 }
 
 #[cfg(test)]

@@ -3,10 +3,11 @@ use crate::{
   dataset::Dataset,
   output_data::{csv_reader, csv_writer},
   progress_bar::get_bar,
+  ItemType,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::{path::Path, collections::HashMap};
+use std::{collections::HashMap, path::Path};
 
 #[derive(Deserialize, Serialize)]
 pub struct ComponentSizeCsvEntry {
@@ -47,8 +48,8 @@ pub fn save_component_sizes(dataset: &Dataset, csv_path: &Path) -> Result<()> {
       count,
     })?;
   }
-  assert_eq!(total_user_size, dataset.names().user.len());
-  assert_eq!(total_repo_size, dataset.names().repo.len());
+  assert_eq!(total_user_size, dataset.len(ItemType::User));
+  assert_eq!(total_repo_size, dataset.len(ItemType::Repo));
 
   Ok(())
 }

@@ -1,13 +1,15 @@
 use anyhow::Result;
 use github_net::{
   component_sizes_csv::save_component_sizes,
+  contribution_dist_csv::{
+    save_contribution_dist, save_contribution_dist_item,
+  },
   dataset::Dataset,
   degree_dist_csv::{save_degrees_dataset, save_degrees_projected_graph},
+  item_name_to_save_name,
   projected_graph::ProjectedGraph,
-  // save_subgraph::save_subgraph,
-  traversal::Node,
-  ItemType,
-  UserRepoPair,
+  save_subgraph::save_subgraph,
+  ItemType, UserRepoPair,
 };
 use std::{
   fs,
@@ -29,6 +31,18 @@ struct Opt {
   #[structopt(long, default_value = "10000")]
   max_user_degree: usize,
 
+  /// Compute the contribution distribution and save it to a csv.
+  #[structopt(long)]
+  contribution: bool,
+
+  /// Compute the contribution distribution for a user and save it to a csv.
+  #[structopt(long, use_delimiter = true)]
+  contributions_for_user: Vec<String>,
+
+  /// Compute the contribution distribution for a repo and save it to a csv.
+  #[structopt(long, use_delimiter = true)]
+  contributions_for_repo: Vec<String>,
+
   /// Compute degrees and save as csv files.
   #[structopt(short, long)]
   degrees: bool,
@@ -37,22 +51,26 @@ struct Opt {
   #[structopt(short, long)]
   components: bool,
 
-  /// Save the subgraph close to this node.
-  #[structopt(long, use_delimiter = true)]
-  subgraph_repo: Vec<String>,
-
-  /// Save the subgraph close to this node.
+  /// Save the projected subgraph close to this user.
   #[structopt(long, use_delimiter = true)]
   subgraph_user: Vec<String>,
+
+  /// Save the subgraph close to this repo.
+  #[structopt(long, use_delimiter = true)]
+  subgraph_repo: Vec<String>,
 
   #[structopt(long, default_value = "3")]
   subgraph_limit: usize,
 
+  /// How many common items (repos in this case) are needed to keep a edge in
+  /// the user projected graph.
   #[structopt(long, use_delimiter = true)]
-  projected_min_common_users: Vec<usize>,
+  projected_user_min_common: Vec<usize>,
 
+  /// How many common items (users in this case) are needed to keep a edge in
+  /// the repo projected graph.
   #[structopt(long, use_delimiter = true)]
-  projected_min_common_repos: Vec<usize>,
+  projected_repo_min_common: Vec<usize>,
 
   #[structopt(long, default_value = "0", use_delimiter = true)]
   min_contribution: Vec<u32>,
@@ -91,87 +109,118 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
   Ok(())
 }
 
-fn run_components(output_dir: &Path, dataset: &Dataset) -> Result<()> {
-  save_component_sizes(dataset, &output_dir.join("component_sizes.csv"))
-}
-
 pub fn main() -> Result<()> {
-  let mut opt = Opt::from_args();
+  let Opt {
+    limit,
+    max_user_degree,
+    contribution,
+    contributions_for_user,
+    contributions_for_repo,
+    degrees,
+    components,
+    subgraph_user,
+    subgraph_repo,
+    subgraph_limit,
+    projected_user_min_common,
+    projected_repo_min_common,
+    mut min_contribution,
+  } = Opt::from_args();
 
-  let mut dataset =
-    Dataset::load_limited(opt.limit, Some(opt.max_user_degree))?;
+  let mut projected_min_common = UserRepoPair {
+    user: projected_user_min_common,
+    repo: projected_repo_min_common,
+  };
 
-  opt.min_contribution.sort();
+  let subgraph_names = UserRepoPair {
+    user: subgraph_user,
+    repo: subgraph_repo,
+  };
 
-  for min_contribution in opt.min_contribution {
+  let contribution_names = UserRepoPair {
+    user: (contributions_for_user, "user"),
+    repo: (contributions_for_repo, "repo"),
+  };
+
+  let mut dataset = Dataset::load_limited(limit, Some(max_user_degree))?;
+
+  let output_dir: PathBuf = "output_data/".into();
+
+  if contribution {
+    println!("running contribution");
+    save_contribution_dist(
+      &output_dir.join("contributions_dist.csv"),
+      &dataset,
+    )?;
+  }
+
+  for (item_type, (names, item_name)) in contribution_names.iter_with_types() {
+    for name in names {
+      println!("running contribution dist for {} {}", item_name, name);
+      let idx = dataset.find_item(item_type, &name).unwrap();
+      save_contribution_dist_item(
+        &output_dir.join(format!(
+          "{}_{}_contributions_dist.csv",
+          item_name,
+          item_name_to_save_name(&name)
+        )),
+        item_type,
+        idx,
+        &dataset,
+      )?;
+    }
+  }
+
+  min_contribution.sort();
+
+  for min_contribution in min_contribution {
     println!("running for min contributions {}", min_contribution);
     dataset.filter_contributions(min_contribution);
 
-    let output_dir: PathBuf =
-      format!("output_data/min_contribution_{}", min_contribution).into();
+    let output_dir =
+      output_dir.join(format!("min_contribution_{}", min_contribution));
 
     fs::create_dir_all(&output_dir)?;
 
-    if opt.degrees {
+    if degrees {
       println!("running degrees");
       run_degrees(&output_dir, &dataset)?
     }
 
-    if opt.components {
+    if components {
       println!("running components");
-      run_components(&output_dir, &dataset)?
+      save_component_sizes(&dataset, &output_dir.join("component_sizes.csv"))?;
     }
-
-    // for &(names, item_type) in &[
-    //   (&opt.subgraph_user, ItemType::User),
-    //   (&opt.subgraph_repo, ItemType::Repo),
-    // ] {
-    //   for name in names {
-    //     let (idx, _) = dataset.names()[item_type]
-    //       .iter()
-    //       .enumerate()
-    //       .find(|(_, other_name)| other_name == &name)
-    //       .unwrap();
-    //     let start = Node { item_type, idx };
-
-    //     println!("saving subgraph for {:?} {}", item_type, name);
-
-    //     save_subgraph(
-    //       start,
-    //       opt.subgraph_limit,
-    //       opt.subgraph_min_repo_degree,
-    //       opt.subgraph_min_common_users,
-    //       &dataset,
-    //     )?;
-    //   }
-    // }
-
-    if min_contribution < 5 {
-      // this is absurdly dense, the projected graph is unworkable
-      continue;
-    }
-
-    let projected_min_common = UserRepoPair {
-      user: opt.projected_min_common_repos.clone(),
-      repo: opt.projected_min_common_users.clone(),
-    };
 
     for &(item_type, prefix) in
       &[(ItemType::User, "user"), (ItemType::Repo, "repo")]
     {
-      for &min_common in &projected_min_common[item_type] {
+      let projected_min_common = &mut projected_min_common[item_type];
+      projected_min_common.sort();
+      let projected_min_common = &*projected_min_common;
+
+      let lowest = if let Some(&lowest) = projected_min_common.get(0) {
+        lowest
+      } else {
+        continue;
+      };
+
+      let mut projected_graph =
+        ProjectedGraph::from_dataset(item_type, lowest, &dataset);
+
+      for &min_common in projected_min_common {
         println!(
           "running projected graph for {} with min common {}",
           prefix, min_common
         );
+
+        projected_graph =
+          projected_graph.filter_edges(dataset.len(item_type), min_common);
+
         let output_dir: PathBuf = output_dir
           .join(&format!("projected_{}", prefix))
           .join(format!("min_common_{}", min_common));
 
         fs::create_dir_all(&output_dir)?;
-
-        let projected_graph =
-          ProjectedGraph::from_dataset(item_type, min_common, &dataset);
 
         save_degrees_projected_graph(
           &output_dir.join("degrees.csv"),
@@ -193,6 +242,21 @@ pub fn main() -> Result<()> {
               .sum()
           },
         )?;
+
+        for name in &subgraph_names[item_type] {
+          let idx = dataset.find_item(item_type, name).unwrap();
+
+          println!("saving subgraph for {:?} {}", item_type, name);
+
+          save_subgraph(
+            &output_dir,
+            idx,
+            subgraph_limit,
+            &projected_graph,
+            item_type,
+            &dataset,
+          )?;
+        }
       }
     }
   }

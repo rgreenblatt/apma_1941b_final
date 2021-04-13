@@ -1,106 +1,58 @@
 use crate::{
   dataset::Dataset,
+  item_name_to_save_name,
   progress_bar::get_bar,
   projected_graph::ProjectedGraph,
-  traversal::{self, default_visited, traverse},
+  traversal::{projected_make_component_dists, projected_traverse_dist},
+  ItemType,
 };
 use anyhow::Result;
-use fnv::{FnvHashMap as Map, FnvHashSet as Set};
-use std::{borrow::Cow, fs::File, io::BufWriter, iter, path::Path};
+use fnv::FnvHashMap as Map;
+use std::{borrow::Cow, fs::File, io::BufWriter, path::Path};
 
 pub fn save_subgraph(
   output_dir: &Path,
   start: usize,
   limit: usize,
-  repo_degree_thresh: usize,
   projected_graph: &ProjectedGraph,
+  item_type: ItemType,
   dataset: &Dataset,
 ) -> Result<()> {
-  let mut visited = default_visited(dataset);
-  start.set_visited(&mut visited);
-  let mut component = start.into();
+  let mut visited = vec![false; dataset.len(item_type)];
+  visited[start] = true;
+  let mut component = projected_make_component_dists(start);
 
   let bar = get_bar(None, 1000);
 
-  traverse(&mut component, &mut visited, dataset, Some(limit), |_| {
-    bar.inc(1)
-  });
+  projected_traverse_dist(
+    &mut component,
+    &mut visited,
+    projected_graph,
+    Some(limit),
+    |_| bar.inc(1),
+  );
 
-  let name =
-    dataset.names()[start.item_type][start.idx].replace(&['/', '-'][..], "_");
-  let graph_name = format!("sub_graph_for_{}", name);
-  let graph_name = &graph_name;
-  let save_name = format!("{}.dot", graph_name);
+  let name = &dataset.names()[item_type][start];
+  let save_name = format!("sub_graph_for_{}.dot", item_name_to_save_name(name));
 
   let path = output_dir.join(save_name);
   let file = File::create(path)?;
   let mut writer = BufWriter::new(file);
 
-  let user_set: Set<_> = component.user.iter().cloned().collect();
-
-  let repo_set: Set<_> = component
-    .repo
+  let map: Map<_, _> = component
+    .idxs()
     .iter()
     .cloned()
-    .filter(|&idx| dataset.repo_contributions()[idx].len() > repo_degree_thresh)
+    .zip(component.dists().iter().cloned())
     .collect();
 
-  let mut edge_counts = Map::default();
-
-  let bar = get_bar(None, 10_000);
-
-  for &repo_idx in repo_set.iter() {
-    for user_idx in
-      dataset.repo_contributions()[repo_idx]
-        .iter()
-        .filter_map(|&contrib_idx| {
-          let user_idx = dataset.contributions()[contrib_idx].idx.user;
-          if user_set.contains(&user_idx) {
-            Some(user_idx)
-          } else {
-            None
-          }
-        })
-    {
-      for item in dataset.user_contributions()[user_idx].iter().filter_map(
-        |&contrib_idx| {
-          bar.inc(1);
-          let end_repo_idx = dataset.contributions()[contrib_idx].idx.repo;
-          if repo_set.contains(&end_repo_idx) && repo_idx < end_repo_idx {
-            Some((repo_idx, end_repo_idx))
-          } else {
-            None
-          }
-        },
-      ) {
-        *edge_counts.entry(item).or_insert(0) += 1;
-      }
-    }
-  }
-
-  let edge_set: Set<_> = edge_counts
-    .into_iter()
-    .filter_map(|(item, count)| {
-      if count > common_users_thresh {
-        Some(item)
-      } else {
-        None
-      }
-    })
-    .collect();
-
-  println!(
-    "saving {} with {} repos and {} edges",
-    graph_name,
-    repo_set.len(),
-    edge_set.len()
-  );
+  println!("saving {} with {} items", name, map.len(),);
 
   let graph = Graph {
-    repo_set,
-    edge_set,
-    dataset,
-    graph_name,
+    use_point: map.len() > 200,
+    map,
+    projected_graph,
+    names: &dataset.names()[item_type],
   };
 
   dot::render(&graph, &mut writer)?;
@@ -109,57 +61,76 @@ pub fn save_subgraph(
 }
 
 type Node = usize;
-type Edge = (usize, usize);
+type Edge = [usize; 2];
 
 struct Graph<'a> {
-  repo_set: Set<Node>,
-  edge_set: Set<Edge>,
-  dataset: &'a Dataset,
-  graph_name: &'a str,
+  map: Map<usize, usize>,
+  projected_graph: &'a ProjectedGraph,
+  names: &'a [String],
+  use_point: bool,
 }
 
 impl<'a> dot::Labeller<'a, Node, Edge> for Graph<'a> {
   fn graph_id(&'a self) -> dot::Id<'a> {
-    dot::Id::new(self.graph_name).unwrap()
+    dot::Id::new("G").unwrap()
   }
 
   fn node_id(&'a self, n: &Node) -> dot::Id<'a> {
-    // remove 'special' characters for graphviz
-    let name = self.dataset.repo_names()[*n]
-      .replace(&['/', '-', '?', '(', ')', '[', ']', '{', '}', '.'][..], "_");
-    let first = name.chars().next().unwrap();
-    // also avoid the first char being a number
-    let name = if '0' <= first && first <= '9' {
-      iter::once('_').chain(name.chars()).collect()
+    dot::Id::new(format!("_{}", n)).unwrap()
+  }
+
+  fn node_label(&'a self, n: &Node) -> dot::LabelText<'a> {
+    dot::LabelText::LabelStr(Cow::Borrowed(&self.names[*n]))
+  }
+
+  fn node_shape(&'a self, _node: &Node) -> Option<dot::LabelText<'a>> {
+    if self.use_point {
+      Some(dot::LabelText::LabelStr(Cow::Borrowed("point")))
     } else {
-      name
-    };
-    let name = format!("{}", name);
-    let out = dot::Id::new(name.clone());
-    if let Ok(out) = out {
-      out
-    } else {
-      panic!("name isn't valid for dot: \"{}\"", name);
+      None
     }
+  }
+
+  fn edge_color(&'a self, e: &Edge) -> Option<dot::LabelText<'a>> {
+    let dist = e.iter().map(|i| *self.map.get(i).unwrap()).min().unwrap();
+    Some(dot::LabelText::LabelStr(
+      format!("/dark28/{}", dist + 1).into(),
+    ))
+  }
+
+  fn kind(&self) -> dot::Kind {
+    dot::Kind::Graph
   }
 }
 
 impl<'a> dot::GraphWalk<'a, Node, Edge> for Graph<'a> {
   fn nodes(&self) -> dot::Nodes<'a, Node> {
-    let nodes = self.repo_set.iter().cloned().collect();
+    let nodes = self.map.keys().cloned().collect();
     Cow::Owned(nodes)
   }
 
   fn edges(&'a self) -> dot::Edges<'a, Edge> {
-    let edges = self.edge_set.iter().cloned().collect();
+    let edges = self
+      .projected_graph
+      .edges()
+      .iter()
+      .cloned()
+      .filter_map(|edge| {
+        if edge.node_idxs.iter().all(|idx| self.map.get(idx).is_some()) {
+          Some(edge.node_idxs)
+        } else {
+          None
+        }
+      })
+      .collect();
     Cow::Owned(edges)
   }
 
   fn source(&self, edge: &Edge) -> Node {
-    edge.0
+    edge[0]
   }
 
   fn target(&self, edge: &Edge) -> Node {
-    edge.1
+    edge[1]
   }
 }

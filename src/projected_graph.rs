@@ -29,12 +29,45 @@ impl ProjectedGraph {
     &self.edge_idxs_v
   }
 
+  pub fn filter_edges(&self, num_items: usize, min_common: usize) -> Self {
+    let edges = self
+      .edges()
+      .iter()
+      .cloned()
+      .filter(|e| e.num >= min_common)
+      .collect();
+
+    Self::from_edges(num_items, edges)
+  }
+
+  fn from_edges(num_items: usize, edges_v: Vec<Edge>) -> Self {
+    let mut edge_idxs = vec![Vec::new(); num_items];
+
+    let bar = get_bar(Some(edges_v.len() as u64), 100_000);
+
+    for (i, &Edge { node_idxs, .. }) in
+      edges_v.iter().enumerate().progress_with(bar)
+    {
+      for &idx in &node_idxs {
+        edge_idxs[idx].push(i);
+        edge_idxs[idx].push(i);
+      }
+    }
+
+    let edge_idxs_v: EdgeVec<_> = edge_idxs.into_iter().collect();
+
+    Self {
+      edges_v,
+      edge_idxs_v,
+    }
+  }
+
   pub fn from_dataset(
     item_type: ItemType,
     min_common: usize,
     dataset: &Dataset,
   ) -> ProjectedGraph {
-    let num_items = dataset.names()[item_type].len();
+    let num_items = dataset.len(item_type);
 
     let bar = get_bar(Some(num_items as u64), 10_000);
 
@@ -45,7 +78,7 @@ impl ProjectedGraph {
       }
     };
 
-    let mut edges_v = Vec::new();
+    let mut edges = Vec::new();
 
     for (start_idx, contributions) in dataset.contribution_idxs()[item_type]
       .iter()
@@ -70,7 +103,7 @@ impl ProjectedGraph {
         }
       }
 
-      edges_v.extend(edge_map.drain().filter_map(|(end_idx, num)| {
+      edges.extend(edge_map.drain().filter_map(|(end_idx, num)| {
         if num >= min_common {
           let edge = Edge {
             node_idxs: [start_idx, end_idx],
@@ -83,24 +116,6 @@ impl ProjectedGraph {
       }))
     }
 
-    let mut edge_idxs = vec![Vec::new(); num_items];
-
-    let bar = get_bar(Some(edges_v.len() as u64), 100_000);
-
-    for (i, &Edge { node_idxs, .. }) in
-      edges_v.iter().enumerate().progress_with(bar)
-    {
-      for &idx in &node_idxs {
-        edge_idxs[idx].push(i);
-        edge_idxs[idx].push(i);
-      }
-    }
-
-    let edge_idxs_v: EdgeVec<_> = edge_idxs.into_iter().collect();
-
-    ProjectedGraph {
-      edges_v,
-      edge_idxs_v,
-    }
+    Self::from_edges(num_items, edges)
   }
 }

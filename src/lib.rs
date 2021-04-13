@@ -1,5 +1,6 @@
 pub mod component_sizes_csv;
 pub mod components;
+pub mod contribution_dist_csv;
 pub mod csv_items;
 pub mod csv_items_iter;
 pub mod dataset;
@@ -10,7 +11,7 @@ mod github_types;
 pub mod output_data;
 pub mod progress_bar;
 pub mod projected_graph;
-// pub mod save_subgraph;
+pub mod save_subgraph;
 pub mod traversal;
 
 pub use edge_vec::EdgeVec;
@@ -32,4 +33,8 @@ fn check_error<E: std::error::Error + Eq + Sync + Send + 'static>(
   );
 
   Ok(())
+}
+
+pub fn item_name_to_save_name(name: &str) -> String {
+  name.replace(&['/', '-'][..], "_")
 }
