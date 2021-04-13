@@ -25,17 +25,35 @@ pub fn save_degrees(
     degree_count.entry(degree).or_insert((0, name.clone())).0 += 1;
   }
 
-  let mut writer = csv_writer(csv_path)?;
-
-  let mut degree_count: Vec<_> = degree_count.into_iter().collect();
-  degree_count.sort_unstable_by_key(|item| item.0.clone());
-
-  for (degree, (count, example_name)) in degree_count {
-    writer.serialize(DegreeCsvEntry {
+  save_sort_items(
+    csv_path,
+    degree_count,
+    |(degree, _)| *degree,
+    |(degree, (count, example_name))| DegreeCsvEntry {
       degree,
       count,
       example_name,
-    })?;
+    },
+  )
+}
+
+pub fn save_sort_items<T, K, E>(
+  csv_path: &Path,
+  items: impl IntoIterator<Item = T>,
+  get_sort_key: impl Fn(&T) -> K,
+  get_entry: impl Fn(T) -> E,
+) -> Result<()>
+where
+  K: Ord,
+  E: Serialize,
+{
+  let mut writer = csv_writer(csv_path)?;
+
+  let mut to_sort: Vec<_> = items.into_iter().collect();
+  to_sort.sort_unstable_by_key(get_sort_key);
+
+  for item in to_sort {
+    writer.serialize(get_entry(item))?;
   }
 
   Ok(())

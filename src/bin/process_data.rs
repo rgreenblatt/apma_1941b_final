@@ -294,7 +294,7 @@ pub fn main() -> Result<()> {
     for &(item_type, prefix) in
       &[(ItemType::User, "user"), (ItemType::Repo, "repo")]
     {
-      for t in &connection_str_types {
+      for &t in &connection_str_types {
         let args = RunConnectionStrArgs {
           item_type,
           prefix,
@@ -308,20 +308,34 @@ pub fn main() -> Result<()> {
 
         type CST = ConnectionStrengthTypes;
         match t {
-          CST::NumCommonNodes => run_connection_str::<NumCommonNodes>(args),
-          CST::MinNumEvents => run_connection_str::<MinNumEvents>(args),
-          CST::NormalizedMinNumEvents => {
-            run_connection_str::<NormalizedMinNumEvents>(args)
+          CST::NumCommonNodes(norm) => {
+            if norm {
+              run_connection_str::<Normalized<NumCommonNodes>>(args)
+            } else {
+              run_connection_str::<NumCommonNodes>(args)
+            }
           }
-          CST::TotalNumEvents => run_connection_str::<TotalNumEvents>(args),
-          CST::NormalizedTotalNumEvents => {
-            run_connection_str::<NormalizedTotalNumEvents>(args)
+          CST::MinNumEvents(norm) => {
+            if norm {
+              run_connection_str::<Normalized<MinNumEvents>>(args)
+            } else {
+              run_connection_str::<MinNumEvents>(args)
+            }
           }
-          CST::GeometricMeanEvents => {
-            run_connection_str::<GeometricMeanEvents>(args)
+
+          CST::TotalNumEvents(norm) => {
+            if norm {
+              run_connection_str::<Normalized<TotalNumEvents>>(args)
+            } else {
+              run_connection_str::<TotalNumEvents>(args)
+            }
           }
-          CST::NormalizedGeometricMeanEvents => {
-            run_connection_str::<NormalizedGeometricMeanEvents>(args)
+          CST::GeometricMeanEvents(norm) => {
+            if norm {
+              run_connection_str::<Normalized<GeometricMeanEvents>>(args)
+            } else {
+              run_connection_str::<GeometricMeanEvents>(args)
+            }
           }
         }?;
       }

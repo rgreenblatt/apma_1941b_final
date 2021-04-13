@@ -1,4 +1,4 @@
-//! TODO: better names....
+//! TODO: allow for using normalized strength values.
 use crate::{
   connection_strength::ConnectionStrength,
   dataset::{Contribution, Dataset},
@@ -87,13 +87,13 @@ where
       contrib.idx[item_type]
     };
 
+    // constructing a new map each time is faster because the average case
+    // has a small number of edges
     for (start_idx, contributions) in dataset.contribution_idxs()[item_type]
       .iter()
       .enumerate()
       .progress_with(bar)
     {
-      // constructing a new map each time is faster because the average case
-      // has a small number of edges
       let mut edge_map = Map::default();
 
       for &first_contrib_idx in contributions {
@@ -107,8 +107,11 @@ where
           })
           .filter(|&(end_idx, _)| end_idx > start_idx)
         {
-          *edge_map.entry(end_idx).or_insert(Default::default()) +=
-            T::strength(first_contrib_idx, second_contrib_idx, dataset);
+          *edge_map.entry(end_idx).or_insert(Default::default()) += T::strength(
+            item_type,
+            [first_contrib_idx, second_contrib_idx],
+            dataset,
+          );
         }
       }
 
@@ -125,8 +128,6 @@ where
 
     let f = |start_idx, mut edge_map: Map<_, _>| {
       edges.extend(edge_map.drain().filter_map(|(end_idx, strength)| {
-        let strength =
-          T::normalize(strength, item_type, start_idx, end_idx, dataset);
         if strength >= *min_strength {
           let edge = Edge {
             node_idxs: [start_idx, end_idx],

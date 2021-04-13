@@ -1,3 +1,4 @@
+pub mod distances;
 pub mod connection_str_stats;
 pub mod component_sizes_csv;
 pub mod components;

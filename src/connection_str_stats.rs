@@ -1,7 +1,9 @@
 use crate::{
-  connection_strength::{ConnectionStrength, ConnectionStrengthValue},
+  connection_strength::{
+    bin_float, ConnectionStrength, ConnectionStrengthValue,
+  },
   dataset::Dataset,
-  output_data::csv_writer,
+  degree_dist_csv::save_sort_items,
   projected_graph::ProjectedGraph,
   ItemType,
 };
@@ -14,15 +16,12 @@ use std::path::Path;
 pub struct DegreeCsvEntry {
   pub degree: usize,
   pub count: usize,
-  pub example_name: String,
 }
 
 #[derive(Serialize)]
 pub struct ConnectionStrengthCsvEntry<S: Serialize> {
   pub strength: S,
   pub count: usize,
-  pub example_name_start: String,
-  pub example_name_end: String,
 }
 
 pub fn save_connection_str_stats<T: ConnectionStrength>(
@@ -32,56 +31,84 @@ pub fn save_connection_str_stats<T: ConnectionStrength>(
 ) -> Result<()> {
   let mut degree_counts = Map::default();
   let mut strength_counts = Map::default();
+  // let mut strength_normalized_counts = Map::default();
+  // let mut expected_counts = Map::default();
+  // let mut total_strength = 0.;
+  // let mut total_expected = 0.;
 
-  let f = |start_idx: usize, mut edge_map: Map<_, _>| {
-    let names: &[String] = &dataset.names()[item_type];
-    let example_name_start = names[start_idx].clone();
-    degree_counts
-      .entry(edge_map.len())
-      .or_insert((0, example_name_start.clone()))
-      .0 += 1;
+  let f = |start_idx: usize, mut edge_map: Map<_, T::Value>| {
+    *degree_counts.entry(edge_map.len()).or_insert(0) += 1;
     for (end_idx, strength) in edge_map.drain() {
       let end_idx: usize = end_idx;
-      let example_name_end = names[end_idx].clone();
-      let strength =
-        T::normalize(strength, item_type, start_idx, end_idx, dataset).bin();
-      strength_counts
-        .entry(strength)
-        .or_insert((0, example_name_start.clone(), example_name_end))
-        .0 += 1;
+
+      // let expected = T::expected(item_type, [start_idx, end_idx], dataset);
+
+      *strength_counts.entry(strength.clone().bin()).or_insert(0) += 1;
+      // strength_normalized_counts
+      //   .entry(bin_float(strength.clone().to_float() / expected))
+      //   .or_insert((0, example_name_start.clone(), example_name_end.clone()))
+      //   .0 += 1;
+      // expected_counts
+      //   .entry(bin_float(expected))
+      //   .or_insert((0, example_name_start.clone(), example_name_end))
+      //   .0 += 1;
+
+      // total_strength += strength.to_float();
+      // total_expected += expected;
     }
   };
 
   ProjectedGraph::<T>::transitive_edge_compute(item_type, dataset, f);
 
-  let mut degree_writer = csv_writer(&output_dir.join("degrees.csv"))?;
+  // println!(
+  //   "total strength divided by total expected is {}",
+  //   total_strength / total_expected
+  // );
 
-  let mut degree_count: Vec<_> = degree_counts.into_iter().collect();
-  degree_count.sort_unstable_by_key(|item| item.0.clone());
+  save_sort_items(
+    &output_dir.join("degrees.csv"),
+    degree_counts,
+    |(degree, _)| degree.clone(),
+    |(degree, count)| DegreeCsvEntry { degree, count },
+  )?;
 
-  for (degree, (count, example_name)) in degree_count {
-    degree_writer.serialize(DegreeCsvEntry {
-      degree,
-      count,
-      example_name,
-    })?;
-  }
-
-  let mut strength_writer = csv_writer(&output_dir.join("strengths.csv"))?;
-
-  let mut strength_count: Vec<_> = strength_counts.into_iter().collect();
-  strength_count.sort_unstable_by_key(|item| item.0.clone());
-
-  for (strength, (count, example_name_start, example_name_end)) in
-    strength_count
-  {
-    strength_writer.serialize(ConnectionStrengthCsvEntry {
+  save_sort_items(
+    &output_dir.join("strengths.csv"),
+    strength_counts,
+    |(strength, _)| strength.clone(),
+    |(strength, count)| ConnectionStrengthCsvEntry {
       strength: strength.to_serializable(),
       count,
-      example_name_start,
-      example_name_end,
-    })?;
-  }
+    },
+  )?;
+
+  // save_sort_items(
+  //   &output_dir.join("strengths_normalized.csv"),
+  //   strength_normalized_counts,
+  //   |(strength, _)| strength.clone(),
+  //   |(strength, (count, example_name_start, example_name_end))| {
+  //     ConnectionStrengthCsvEntry {
+  //       strength: strength.to_serializable(),
+  //       count,
+  //       example_name_start,
+  //       example_name_end,
+  //     }
+  //   },
+  // )?;
+
+  // save_sort_items(
+  //   &output_dir.join("expected.csv"),
+  //   expected_counts,
+  //   |(expected, _)| expected.clone(),
+  //   |(expected, (count, example_name_start, example_name_end))| {
+  //     ConnectionStrengthCsvEntry {
+  //       strength: expected.into_inner(),
+  //       count,
+  //       example_name_start,
+  //       example_name_end,
+  //     }
+  //   },
+  // )?;
 
   Ok(())
 }
