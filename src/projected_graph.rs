@@ -1,27 +1,32 @@
+//! TODO: better names....
 use crate::{
+  connection_strength::ConnectionStrength,
   dataset::{Contribution, Dataset},
   edge_vec::EdgeVec,
-  github_types::ItemType,
   progress_bar::get_bar,
+  ItemType,
 };
 use fnv::FnvHashMap as Map;
 use indicatif::ProgressIterator;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
-pub struct Edge {
+pub struct Edge<T: ConnectionStrength> {
   /// order is lowest to highest, but otherwise shouldn't matter
   pub node_idxs: [usize; 2],
 
-  pub num: usize,
+  pub strength: T::Value,
 }
 
-pub struct ProjectedGraph {
-  edges_v: Vec<Edge>,
+pub struct ProjectedGraph<T: ConnectionStrength> {
+  edges_v: Vec<Edge<T>>,
   edge_idxs_v: EdgeVec<usize>,
 }
 
-impl ProjectedGraph {
-  pub fn edges(&self) -> &[Edge] {
+impl<T> ProjectedGraph<T>
+where
+  T: ConnectionStrength,
+{
+  pub fn edges(&self) -> &[Edge<T>] {
     &self.edges_v
   }
 
@@ -29,18 +34,22 @@ impl ProjectedGraph {
     &self.edge_idxs_v
   }
 
-  pub fn filter_edges(&self, num_items: usize, min_common: usize) -> Self {
+  pub fn filter_edges(
+    &self,
+    num_items: usize,
+    min_strength: &T::Value,
+  ) -> Self {
     let edges = self
       .edges()
       .iter()
       .cloned()
-      .filter(|e| e.num >= min_common)
+      .filter(|e| &e.strength >= min_strength)
       .collect();
 
     Self::from_edges(num_items, edges)
   }
 
-  fn from_edges(num_items: usize, edges_v: Vec<Edge>) -> Self {
+  fn from_edges(num_items: usize, edges_v: Vec<Edge<T>>) -> Self {
     let mut edge_idxs = vec![Vec::new(); num_items];
 
     let bar = get_bar(Some(edges_v.len() as u64), 100_000);
@@ -62,23 +71,21 @@ impl ProjectedGraph {
     }
   }
 
-  pub fn from_dataset(
+  // We use a "for each" type construct for efficiency - external iterators are
+  // very slow if used naively in this context.
+  pub fn transitive_edge_compute(
     item_type: ItemType,
-    min_common: usize,
     dataset: &Dataset,
-  ) -> ProjectedGraph {
+    mut f: impl FnMut(usize, Map<usize, T::Value>),
+  ) {
     let num_items = dataset.len(item_type);
 
     let bar = get_bar(Some(num_items as u64), 10_000);
 
-    let contrib_idx_to_item_idx = |item_type: ItemType| {
-      move |&contrib_idx| {
-        let contrib: Contribution = dataset.contributions()[contrib_idx];
-        contrib.idx[item_type]
-      }
+    let contrib_idx_to_item_idx = |item_type: ItemType, contrib_idx| {
+      let contrib: Contribution = dataset.contributions()[contrib_idx];
+      contrib.idx[item_type]
     };
-
-    let mut edges = Vec::new();
 
     for (start_idx, contributions) in dataset.contribution_idxs()[item_type]
       .iter()
@@ -89,33 +96,51 @@ impl ProjectedGraph {
       // has a small number of edges
       let mut edge_map = Map::default();
 
-      for middle_idx in contributions
-        .iter()
-        .map(contrib_idx_to_item_idx(item_type.other()))
-      {
-        for end_idx in dataset.contribution_idxs()[item_type.other()]
-          [middle_idx]
+      for &first_contrib_idx in contributions {
+        let middle_idx =
+          contrib_idx_to_item_idx(item_type.other(), first_contrib_idx);
+        for (end_idx, second_contrib_idx) in dataset.contribution_idxs()
+          [item_type.other()][middle_idx]
           .iter()
-          .map(contrib_idx_to_item_idx(item_type))
-          .filter(|&end_idx| end_idx > start_idx)
+          .map(|&contrib_idx| {
+            (contrib_idx_to_item_idx(item_type, contrib_idx), contrib_idx)
+          })
+          .filter(|&(end_idx, _)| end_idx > start_idx)
         {
-          *edge_map.entry(end_idx).or_insert(0) += 1;
+          *edge_map.entry(end_idx).or_insert(Default::default()) +=
+            T::strength(first_contrib_idx, second_contrib_idx, dataset);
         }
       }
 
-      edges.extend(edge_map.drain().filter_map(|(end_idx, num)| {
-        if num >= min_common {
+      f(start_idx, edge_map);
+    }
+  }
+
+  pub fn from_dataset(
+    item_type: ItemType,
+    min_strength: &T::Value,
+    dataset: &Dataset,
+  ) -> Self {
+    let mut edges = Vec::new();
+
+    let f = |start_idx, mut edge_map: Map<_, _>| {
+      edges.extend(edge_map.drain().filter_map(|(end_idx, strength)| {
+        let strength =
+          T::normalize(strength, item_type, start_idx, end_idx, dataset);
+        if strength >= *min_strength {
           let edge = Edge {
             node_idxs: [start_idx, end_idx],
-            num,
+            strength,
           };
           Some(edge)
         } else {
           None
         }
       }))
-    }
+    };
 
-    Self::from_edges(num_items, edges)
+    Self::transitive_edge_compute(item_type, dataset, f);
+
+    Self::from_edges(dataset.len(item_type), edges)
   }
 }

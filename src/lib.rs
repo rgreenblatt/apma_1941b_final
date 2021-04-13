@@ -1,5 +1,7 @@
+pub mod connection_str_stats;
 pub mod component_sizes_csv;
 pub mod components;
+pub mod connection_strength;
 pub mod contribution_dist_csv;
 pub mod csv_items;
 pub mod csv_items_iter;

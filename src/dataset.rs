@@ -56,7 +56,7 @@ impl Dataset {
     &self.repos_v
   }
 
-  pub fn len(&self, item_type: ItemType) -> usize{
+  pub fn len(&self, item_type: ItemType) -> usize {
     self.names()[item_type].len()
   }
 
@@ -347,23 +347,28 @@ impl Dataset {
 
   pub fn load_limited(
     limit: Option<usize>,
-    user_exclude_degree_thresh: Option<usize>,
+    user_exclude_contributions_thresh: Option<usize>,
   ) -> anyhow::Result<Self> {
     if let Some(excluded) =
-      user_exclude_degree_thresh.and_then(Self::cache_lookup)
+      user_exclude_contributions_thresh.and_then(Self::cache_lookup)
     {
       let excluded = excluded?;
       return Self::load_limited_exclude(limit, &excluded);
     }
     let out = Self::load_limited_exclude(limit, &Default::default());
-    if let Some(thresh) = user_exclude_degree_thresh {
+    if let Some(thresh) = user_exclude_contributions_thresh {
       let out = out?;
       let excluded: Set<_> = out
         .user_contributions()
         .iter()
         .zip(out.users())
         .filter_map(|(contribs, &user)| {
-          if contribs.len() >= thresh {
+          let total_contribs = contribs
+            .iter()
+            .map(|&contrib_idx| out.contributions()[contrib_idx].num as usize)
+            .sum::<usize>();
+
+          if total_contribs >= thresh {
             Some(user)
           } else {
             None

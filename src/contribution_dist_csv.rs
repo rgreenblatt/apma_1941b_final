@@ -27,7 +27,7 @@ fn save_contribution_dist_impl<'a>(
       .or_insert((
         0,
         dataset.user_logins()[idx.user].clone(),
-        dataset.user_logins()[idx.user].clone(),
+        dataset.repo_names()[idx.repo].clone(),
       ))
       .0 += 1;
   }

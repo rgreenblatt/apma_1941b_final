@@ -1,11 +1,13 @@
 use anyhow::Result;
 use github_net::{
   component_sizes_csv::save_component_sizes,
+  connection_str_stats::save_connection_str_stats,
+  connection_strength::*,
   contribution_dist_csv::{
     save_contribution_dist, save_contribution_dist_item,
   },
   dataset::Dataset,
-  degree_dist_csv::{save_degrees_dataset, save_degrees_projected_graph},
+  degree_dist_csv::save_degrees,
   item_name_to_save_name,
   projected_graph::ProjectedGraph,
   save_subgraph::save_subgraph,
@@ -27,9 +29,9 @@ struct Opt {
   #[structopt(short, long)]
   limit: Option<usize>,
 
-  /// Limit the maximum user degree to avoid bots and spammers.
-  #[structopt(long, default_value = "10000")]
-  max_user_degree: usize,
+  /// Eliminate users with very large contribution to remove bots and spammers.
+  #[structopt(long, default_value = "500000")]
+  max_user_contributions: usize,
 
   /// Compute the contribution distribution and save it to a csv.
   #[structopt(long)]
@@ -62,15 +64,24 @@ struct Opt {
   #[structopt(long, default_value = "3")]
   subgraph_limit: usize,
 
-  /// How many common items (repos in this case) are needed to keep a edge in
-  /// the user projected graph.
+  /// How strong the connection must be to keep a edge in the user projected
+  /// graph.
   #[structopt(long, use_delimiter = true)]
-  projected_user_min_common: Vec<usize>,
+  projected_user_min_connection_str: Vec<f64>,
 
-  /// How many common items (users in this case) are needed to keep a edge in
-  /// the repo projected graph.
+  /// How strong the connection must be to keep a edge in the repo projected
+  /// graph.
   #[structopt(long, use_delimiter = true)]
-  projected_repo_min_common: Vec<usize>,
+  projected_repo_min_connection_str: Vec<f64>,
+
+  /// What type of connection strength metrics to use - typically just 1 should
+  /// be specified.
+  #[structopt(long, use_delimiter = true)]
+  connection_str_types: Vec<ConnectionStrengthTypes>,
+
+  /// Compute and save statistics about connection strengths.
+  #[structopt(long)]
+  connection_str_stats: bool,
 
   #[structopt(long, default_value = "0", use_delimiter = true)]
   min_contribution: Vec<u32>,
@@ -81,7 +92,7 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
     (ItemType::User, "user_degrees.csv"),
     (ItemType::Repo, "repo_degrees.csv"),
   ] {
-    save_degrees_dataset(
+    save_degrees(
       &output_dir.join(name),
       item_type,
       dataset,
@@ -93,7 +104,7 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
     (ItemType::User, "user_total_contributions.csv"),
     (ItemType::Repo, "repo_total_events.csv"),
   ] {
-    save_degrees_dataset(
+    save_degrees(
       &output_dir.join(name),
       item_type,
       dataset,
@@ -109,10 +120,97 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
   Ok(())
 }
 
+struct RunConnectionStrArgs<'a> {
+  item_type: ItemType,
+  prefix: &'a str,
+  output_dir: &'a Path,
+  min_connection_str: &'a mut [f64],
+  subgraph_names: &'a [String],
+  subgraph_limit: usize,
+  dataset: &'a Dataset,
+  connection_str_stats: bool,
+}
+
+fn run_connection_str<'a, T: ConnectionStrength>(
+  args: RunConnectionStrArgs<'a>,
+) -> Result<()> {
+  let RunConnectionStrArgs {
+    item_type,
+    prefix,
+    output_dir,
+    min_connection_str,
+    subgraph_names,
+    subgraph_limit,
+    dataset,
+    connection_str_stats,
+  } = args;
+
+  let output_dir: PathBuf = output_dir
+    .join(&format!("projected_{}", prefix))
+    .join(format!("{:?}", T::default()));
+
+  fs::create_dir_all(&output_dir)?;
+
+  println!(
+    "running projected graph for {} with connection strength type {:?}",
+    prefix,
+    T::default(),
+  );
+
+  if connection_str_stats {
+    save_connection_str_stats::<T>(&output_dir, item_type, &dataset)?;
+  }
+
+  min_connection_str.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+  let min_connection_str: Vec<T::Value> = min_connection_str
+    .into_iter()
+    .map(|v| ConnectionStrengthValue::from_float(*v))
+    .collect::<anyhow::Result<_>>()?;
+
+  let lowest = if let Some(lowest) = min_connection_str.get(0) {
+    lowest
+  } else {
+    return Ok(());
+  };
+
+  let mut projected_graph =
+    ProjectedGraph::<T>::from_dataset(item_type, lowest, &dataset);
+
+  for ref min_connection_str in min_connection_str {
+    println!("running for min connection strength {}", min_connection_str);
+
+    projected_graph =
+      projected_graph.filter_edges(dataset.len(item_type), min_connection_str);
+
+    let output_dir: PathBuf =
+      output_dir.join(format!("min_connection_str_{}", &min_connection_str));
+
+    fs::create_dir_all(&output_dir)?;
+
+    for name in subgraph_names {
+      let idx = dataset.find_item(item_type, name).unwrap();
+
+      println!("saving subgraph for {:?} {}", item_type, name);
+
+      save_subgraph(
+        &output_dir,
+        idx,
+        subgraph_limit,
+        &projected_graph,
+        item_type,
+        &dataset,
+      )?;
+    }
+  }
+
+  Ok(())
+}
+
 pub fn main() -> Result<()> {
   let Opt {
     limit,
-    max_user_degree,
+    max_user_contributions,
     contribution,
     contributions_for_user,
     contributions_for_repo,
@@ -121,14 +219,16 @@ pub fn main() -> Result<()> {
     subgraph_user,
     subgraph_repo,
     subgraph_limit,
-    projected_user_min_common,
-    projected_repo_min_common,
+    projected_user_min_connection_str,
+    projected_repo_min_connection_str,
+    connection_str_types,
+    connection_str_stats,
     mut min_contribution,
   } = Opt::from_args();
 
-  let mut projected_min_common = UserRepoPair {
-    user: projected_user_min_common,
-    repo: projected_repo_min_common,
+  let contribution_names = UserRepoPair {
+    user: (contributions_for_user, "user"),
+    repo: (contributions_for_repo, "repo"),
   };
 
   let subgraph_names = UserRepoPair {
@@ -136,12 +236,12 @@ pub fn main() -> Result<()> {
     repo: subgraph_repo,
   };
 
-  let contribution_names = UserRepoPair {
-    user: (contributions_for_user, "user"),
-    repo: (contributions_for_repo, "repo"),
+  let mut projected_min_connection_str = UserRepoPair {
+    user: projected_user_min_connection_str,
+    repo: projected_repo_min_connection_str,
   };
 
-  let mut dataset = Dataset::load_limited(limit, Some(max_user_degree))?;
+  let mut dataset = Dataset::load_limited(limit, Some(max_user_contributions))?;
 
   let output_dir: PathBuf = "output_data/".into();
 
@@ -194,69 +294,36 @@ pub fn main() -> Result<()> {
     for &(item_type, prefix) in
       &[(ItemType::User, "user"), (ItemType::Repo, "repo")]
     {
-      let projected_min_common = &mut projected_min_common[item_type];
-      projected_min_common.sort();
-      let projected_min_common = &*projected_min_common;
-
-      let lowest = if let Some(&lowest) = projected_min_common.get(0) {
-        lowest
-      } else {
-        continue;
-      };
-
-      let mut projected_graph =
-        ProjectedGraph::from_dataset(item_type, lowest, &dataset);
-
-      for &min_common in projected_min_common {
-        println!(
-          "running projected graph for {} with min common {}",
-          prefix, min_common
-        );
-
-        projected_graph =
-          projected_graph.filter_edges(dataset.len(item_type), min_common);
-
-        let output_dir: PathBuf = output_dir
-          .join(&format!("projected_{}", prefix))
-          .join(format!("min_common_{}", min_common));
-
-        fs::create_dir_all(&output_dir)?;
-
-        save_degrees_projected_graph(
-          &output_dir.join("degrees.csv"),
+      for t in &connection_str_types {
+        let args = RunConnectionStrArgs {
           item_type,
-          &projected_graph,
-          &dataset,
-          |items: &[_]| items.len(),
-        )?;
+          prefix,
+          output_dir: &output_dir,
+          min_connection_str: &mut projected_min_connection_str[item_type],
+          subgraph_limit,
+          subgraph_names: &subgraph_names[item_type],
+          connection_str_stats,
+          dataset: &dataset,
+        };
 
-        save_degrees_projected_graph(
-          &output_dir.join("total_events.csv"),
-          item_type,
-          &projected_graph,
-          &dataset,
-          |items: &[usize]| -> usize {
-            items
-              .iter()
-              .map(|&i| projected_graph.edges()[i].num as usize)
-              .sum()
-          },
-        )?;
-
-        for name in &subgraph_names[item_type] {
-          let idx = dataset.find_item(item_type, name).unwrap();
-
-          println!("saving subgraph for {:?} {}", item_type, name);
-
-          save_subgraph(
-            &output_dir,
-            idx,
-            subgraph_limit,
-            &projected_graph,
-            item_type,
-            &dataset,
-          )?;
-        }
+        type CST = ConnectionStrengthTypes;
+        match t {
+          CST::NumCommonNodes => run_connection_str::<NumCommonNodes>(args),
+          CST::MinNumEvents => run_connection_str::<MinNumEvents>(args),
+          CST::NormalizedMinNumEvents => {
+            run_connection_str::<NormalizedMinNumEvents>(args)
+          }
+          CST::TotalNumEvents => run_connection_str::<TotalNumEvents>(args),
+          CST::NormalizedTotalNumEvents => {
+            run_connection_str::<NormalizedTotalNumEvents>(args)
+          }
+          CST::GeometricMeanEvents => {
+            run_connection_str::<GeometricMeanEvents>(args)
+          }
+          CST::NormalizedGeometricMeanEvents => {
+            run_connection_str::<NormalizedGeometricMeanEvents>(args)
+          }
+        }?;
       }
     }
   }

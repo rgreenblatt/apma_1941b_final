@@ -1,5 +1,6 @@
 use crate::{
-  dataset::Dataset, projected_graph::ProjectedGraph, ItemType, UserRepoPair,
+  connection_strength::ConnectionStrength, dataset::Dataset,
+  projected_graph::ProjectedGraph, ItemType, UserRepoPair,
 };
 use std::{hash::Hash, iter};
 
@@ -221,20 +222,20 @@ fn traversal_step(
   *start = component[item_type].idxs().len();
 }
 
-pub fn projected_traverse(
+pub fn projected_traverse<T: ConnectionStrength>(
   component: &mut Vec<usize>,
   visited: &mut Vec<bool>,
-  projected_graph: &ProjectedGraph,
+  projected_graph: &ProjectedGraph<T>,
   limit: Option<usize>,
   callback: impl FnMut(usize),
 ) {
   projected_traverse_gen(component, visited, projected_graph, limit, callback)
 }
 
-pub fn projected_traverse_dist(
+pub fn projected_traverse_dist<T: ConnectionStrength>(
   component: &mut IdxDist,
   visited: &mut Vec<bool>,
-  projected_graph: &ProjectedGraph,
+  projected_graph: &ProjectedGraph<T>,
   limit: Option<usize>,
   callback: impl FnMut(usize),
 ) {
@@ -243,10 +244,10 @@ pub fn projected_traverse_dist(
   projected_traverse_gen(component, visited, projected_graph, limit, callback)
 }
 
-fn projected_traverse_gen(
+fn projected_traverse_gen<T: ConnectionStrength>(
   component: &mut impl ComponentAccess,
   visited: &mut Vec<bool>,
-  projected_graph: &ProjectedGraph,
+  projected_graph: &ProjectedGraph<T>,
   limit: Option<usize>,
   mut callback: impl FnMut(usize),
 ) {
@@ -284,12 +285,12 @@ fn projected_traverse_gen(
   }
 }
 
-fn projected_traversal_step(
+fn projected_traversal_step<T: ConnectionStrength>(
   dist: usize,
   start: &mut usize,
   visited: &mut Vec<bool>,
   component: &mut impl ComponentAccess,
-  projected_graph: &ProjectedGraph,
+  projected_graph: &ProjectedGraph<T>,
   callback: &mut impl FnMut(usize),
 ) {
   let end = component.idxs().len();

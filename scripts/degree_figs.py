@@ -8,7 +8,9 @@ OUTPUT_DATA_DIR = 'output_data/'
 
 
 def main():
-    for dir_path in os.listdir(OUTPUT_DATA_DIR):
+    _, directories, _ = next(os.walk(OUTPUT_DATA_DIR))
+    for dir_path in directories:
+        print(dir_path)
         fig_dir = "{}/{}".format(FIG_DIR, dir_path)
         data_dir = "{}/{}".format(OUTPUT_DATA_DIR, dir_path)
         os.makedirs(FIG_DIR, exist_ok=True)
@@ -24,7 +26,10 @@ def main():
             ("repo_projected_total_events", "repo projected total events")
         ]:
 
-            df = pd.read_csv("{}/{}.csv".format(data_dir, name), sep=',')
+            try:
+                df = pd.read_csv("{}/{}.csv".format(data_dir, name), sep=',')
+            except FileNotFoundError:
+                continue
             degrees = df['degree']
             counts = df['count']
 

@@ -1,4 +1,5 @@
 use crate::{
+  connection_strength::ConnectionStrength,
   dataset::Dataset,
   item_name_to_save_name,
   progress_bar::get_bar,
@@ -10,11 +11,11 @@ use anyhow::Result;
 use fnv::FnvHashMap as Map;
 use std::{borrow::Cow, fs::File, io::BufWriter, path::Path};
 
-pub fn save_subgraph(
+pub fn save_subgraph<T: ConnectionStrength>(
   output_dir: &Path,
   start: usize,
   limit: usize,
-  projected_graph: &ProjectedGraph,
+  projected_graph: &ProjectedGraph<T>,
   item_type: ItemType,
   dataset: &Dataset,
 ) -> Result<()> {
@@ -55,7 +56,7 @@ pub fn save_subgraph(
     names: &dataset.names()[item_type],
   };
 
-  dot::render(&graph, &mut writer)?;
+  // dot::render(&graph, &mut writer)?;
 
   Ok(())
 }
@@ -63,14 +64,14 @@ pub fn save_subgraph(
 type Node = usize;
 type Edge = [usize; 2];
 
-struct Graph<'a> {
+struct Graph<'a, T: ConnectionStrength> {
   map: Map<usize, usize>,
-  projected_graph: &'a ProjectedGraph,
+  projected_graph: &'a ProjectedGraph<T>,
   names: &'a [String],
   use_point: bool,
 }
 
-impl<'a> dot::Labeller<'a, Node, Edge> for Graph<'a> {
+impl<'a, T: ConnectionStrength> dot::Labeller<'a, Node, Edge> for Graph<'a, T> {
   fn graph_id(&'a self) -> dot::Id<'a> {
     dot::Id::new("G").unwrap()
   }
@@ -103,7 +104,9 @@ impl<'a> dot::Labeller<'a, Node, Edge> for Graph<'a> {
   }
 }
 
-impl<'a> dot::GraphWalk<'a, Node, Edge> for Graph<'a> {
+impl<'a, T: ConnectionStrength> dot::GraphWalk<'a, Node, Edge>
+  for Graph<'a, T>
+{
   fn nodes(&self) -> dot::Nodes<'a, Node> {
     let nodes = self.map.keys().cloned().collect();
     Cow::Owned(nodes)
