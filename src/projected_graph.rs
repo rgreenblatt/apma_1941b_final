@@ -1,4 +1,3 @@
-//! TODO: allow for using normalized strength values.
 use crate::{
   connection_strength::ConnectionStrength,
   dataset::{Contribution, Dataset},
@@ -7,7 +6,9 @@ use crate::{
   ItemType,
 };
 use fnv::FnvHashMap as Map;
-use indicatif::ProgressIterator;
+use indicatif::{ParallelProgressIterator, ProgressIterator};
+use rayon::prelude::*;
+use std::sync::Mutex;
 
 #[derive(Copy, Clone, Hash, Eq, PartialEq, Debug)]
 pub struct Edge<T: ConnectionStrength> {
@@ -27,7 +28,7 @@ pub struct ProjectedGraph<T: ConnectionStrength> {
 pub fn transitive_edge_compute(
   item_type: ItemType,
   dataset: &Dataset,
-  mut f: impl FnMut(usize, Map<usize, (Vec<usize>, Vec<[usize; 2]>)>),
+  f: impl Fn(usize, Map<usize, (Vec<usize>, Vec<[usize; 2]>)>) + Send + Sync,
 ) {
   let num_items = dataset.len(item_type);
 
@@ -39,33 +40,34 @@ pub fn transitive_edge_compute(
   };
 
   // constructing a new map each time is faster because the average case
-  // has a small number of edges
-  for (start_idx, contributions) in dataset.contribution_idxs()[item_type]
-    .iter()
-    .enumerate()
+  // has a small number of edges (also, its better for threading)
+  (0..dataset.len(item_type))
+    .into_par_iter()
     .progress_with(bar)
-  {
-    let mut edge_map: Map<_, (Vec<usize>, Vec<[usize; 2]>)> = Map::default();
+    .for_each(|start_idx| {
+      let mut edge_map: Map<_, (Vec<usize>, Vec<[usize; 2]>)> = Map::default();
 
-    for &first_contrib_idx in contributions {
-      let middle_idx =
-        contrib_idx_to_item_idx(item_type.other(), first_contrib_idx);
-      for (end_idx, second_contrib_idx) in dataset.contribution_idxs()
-        [item_type.other()][middle_idx]
-        .iter()
-        .map(|&contrib_idx| {
-          (contrib_idx_to_item_idx(item_type, contrib_idx), contrib_idx)
-        })
-        .filter(|&(end_idx, _)| end_idx > start_idx)
+      for &first_contrib_idx in
+        &dataset.contribution_idxs()[item_type][start_idx]
       {
-        let entry = edge_map.entry(end_idx).or_insert_with(Default::default);
-        entry.0.push(middle_idx);
-        entry.1.push([first_contrib_idx, second_contrib_idx]);
+        let middle_idx =
+          contrib_idx_to_item_idx(item_type.other(), first_contrib_idx);
+        for (end_idx, second_contrib_idx) in dataset.contribution_idxs()
+          [item_type.other()][middle_idx]
+          .iter()
+          .map(|&contrib_idx| {
+            (contrib_idx_to_item_idx(item_type, contrib_idx), contrib_idx)
+          })
+          .filter(|&(end_idx, _)| end_idx > start_idx)
+        {
+          let entry = edge_map.entry(end_idx).or_insert_with(Default::default);
+          entry.0.push(middle_idx);
+          entry.1.push([first_contrib_idx, second_contrib_idx]);
+        }
       }
-    }
 
-    f(start_idx, edge_map);
-  }
+      f(start_idx, edge_map);
+    })
 }
 
 impl<T> ProjectedGraph<T>
@@ -123,10 +125,10 @@ where
     min_strength: &T::Value,
     dataset: &Dataset,
   ) -> Self {
-    let mut edges = Vec::new();
+    let edges = Mutex::new(Vec::new());
 
     let f = |start_idx, mut edge_map: Map<_, (Vec<usize>, Vec<[usize; 2]>)>| {
-      edges.extend(edge_map.drain().filter_map(
+      edges.lock().unwrap().extend(edge_map.drain().filter_map(
         |(end_idx, (common_other_idxs, contrib_idxs))| {
           let strength = connection_strength.strength(
             item_type,
@@ -149,6 +151,6 @@ where
 
     transitive_edge_compute(item_type, dataset, f);
 
-    Self::from_edges(dataset.len(item_type), edges)
+    Self::from_edges(dataset.len(item_type), edges.into_inner().unwrap())
   }
 }

@@ -23,7 +23,7 @@ where
   T: for<'a> Deserialize<'a>,
 {
   fn load_in_items(&mut self) -> Option<std::io::Result<()>> {
-    debug_assert!(self.items.is_empty());
+    assert!(self.items.is_empty());
     if self.reader.is_none() {
       let file = File::open(self.files.get(self.files_index)?);
       self.files_index += 1;

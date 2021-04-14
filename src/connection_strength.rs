@@ -7,6 +7,8 @@ use std::{fmt, hash::Hash, iter, marker::PhantomData, ops, str::FromStr};
 
 pub trait ConnectionStrengthValue:
   PartialOrd
+  + Sync
+  + Send
   + Default
   + Clone
   + ops::AddAssign
@@ -27,9 +29,13 @@ pub trait ConnectionStrengthValue:
   fn to_serializable(self) -> Self::S;
 }
 
-pub fn bin_float(v: f64) -> NotNan<f64> {
-  let place = NotNan::new(2f64.powi(8)).unwrap();
+pub fn bin_float_place(v: f64, place: usize) -> NotNan<f64> {
+  let place = NotNan::new(place as f64).unwrap();
   NotNan::new((NotNan::new(v).unwrap() * place).round()).unwrap() / place
+}
+
+pub fn bin_float(v: f64) -> NotNan<f64> {
+  bin_float_place(v, 4)
 }
 
 impl ConnectionStrengthValue for NotNan<f64> {
@@ -190,11 +196,14 @@ impl<T: ConnectionStrength> ExpectationAccelerator<T> {
     for idx in common_other_idxs {
       total -= self.maps[items_idxs[1]].get(idx).unwrap();
     }
+
+    debug_assert!(total > 0.);
+
     total
   }
 }
 
-pub trait ConnectionStrength: Clone + Copy + fmt::Debug {
+pub trait ConnectionStrength: Clone + Copy + fmt::Debug + Sync + Send {
   type Value: ConnectionStrengthValue;
 
   fn strength(

@@ -1,3 +1,4 @@
+pub mod configuration_model;
 pub mod component_sizes_csv;
 pub mod components;
 pub mod connection_str_stats;

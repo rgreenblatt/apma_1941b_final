@@ -1,6 +1,7 @@
 use anyhow::Result;
 use github_net::{
   component_sizes_csv::save_component_sizes,
+  configuration_model,
   connection_str_stats::save_connection_str_stats,
   connection_strength::*,
   contribution_dist_csv::{
@@ -30,6 +31,10 @@ struct Opt {
   /// Maximum number of samples (mostly useful for testing).
   #[structopt(short, long)]
   limit: Option<usize>,
+
+  /// Replace dataset with a configuration model with the same degrees.
+  #[structopt(short, long)]
+  use_configuration_model: bool,
 
   /// Eliminate users with very large contribution to remove (some) bots and
   /// spammers.
@@ -258,6 +263,7 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
 pub fn main() -> Result<()> {
   let Opt {
     limit,
+    use_configuration_model,
     max_user_contributions,
     contribution,
     contributions_for_user,
@@ -293,7 +299,15 @@ pub fn main() -> Result<()> {
 
   let mut dataset = Dataset::load_limited(limit, Some(max_user_contributions))?;
 
-  let output_dir: PathBuf = "output_data/".into();
+  let output_dir: PathBuf = if use_configuration_model {
+    configuration_model::gen_graph(&mut dataset);
+
+    "configuration_model_output_data/".into()
+  } else {
+    "output_data/".into()
+  };
+
+  fs::create_dir_all(&output_dir)?;
 
   if contribution {
     println!("running contribution");

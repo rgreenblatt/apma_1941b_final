@@ -1,8 +1,10 @@
 typings/
 
 /excluded_cache
+/configuration_model_figs
 /figs
 /output_data
+/configuration_model_output_data
 /items
 /data
 /target

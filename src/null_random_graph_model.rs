@@ -1,8 +1,9 @@
 use crate::{
   dataset::{Contribution, Dataset},
-  UserRepoPair,
+  edge_vec::EdgeVec,
+  ItemType, UserRepoPair,
 };
-use fnv::{FnvHashMap as Map, FnvHashSet as Set};
+use fnv::FnvHashMap as Map;
 use rand::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -32,7 +33,11 @@ where
   left
 }
 
-pub fn gen_graph(dataset: &mut Dataset) {
+pub fn gen_graph(dataset: &Dataset) {
+  let alpha = 0.001;
+  let beta = 0.4;
+  // let 
+
   let mut counts = Map::default();
 
   let mut degrees: UserRepoPair<Vec<DegreeItem>> =
@@ -77,7 +82,7 @@ pub fn gen_graph(dataset: &mut Dataset) {
     bins.push(last);
   }
 
-  let mut rng = StdRng::seed_from_u64(812388383);
+  let mut rng = rand::thread_rng();
 
   degrees.repo.shuffle(&mut rng);
 
@@ -85,16 +90,11 @@ pub fn gen_graph(dataset: &mut Dataset) {
 
   for (item_type, v) in degrees.iter_with_types() {
     for v in v {
-      let i = partition_point(&bins, |bin| bin < &v.num);
-      assert!(bins[i] >= v.num);
-      let before = if i == 0 { 0 } else { bins[i - 1] };
-      assert!(before <= v.num);
-
+      let i = partition_point(&bins, |bin| bin < &v.num) + 1;
       binned_degrees[i][item_type].push(v);
     }
   }
 
-  // TODO: fix this!!!
   let mut contribution_idxs = dataset.contribution_idxs().clone();
   contribution_idxs.as_mut().map_with(|idxs, item_type| {
     for i in 0..dataset.len(item_type) {
@@ -104,15 +104,8 @@ pub fn gen_graph(dataset: &mut Dataset) {
 
   let mut contributions = Vec::new();
 
-  let mut connected = Set::default();
-
   for binned in binned_degrees {
     for (repo, user) in binned.repo.iter().zip(binned.user.iter()) {
-      if connected.contains(&(repo.i, user.i)) {
-        // ignore multi edge (for now)
-        continue;
-      }
-
       let i = contributions.len();
       let num = (repo.num + user.num) / 2;
       contribution_idxs.repo[repo.i][repo.j] = i;
@@ -124,21 +117,18 @@ pub fn gen_graph(dataset: &mut Dataset) {
           repo: repo.i,
         },
       });
-      connected.insert((repo.i, user.i));
     }
   }
 
-  println!(
-    "removed {} duplicate edges",
-    dataset.contributions().len() - contributions.len()
-  );
+  assert_eq!(contributions.len(), dataset.contributions().len());
 
-  dataset.set_edges(
-    contributions,
-    contribution_idxs.map(|v| {
-      v.iter()
-        .map(|idxs| idxs.iter().cloned().filter(|&v| v != std::usize::MAX))
-        .collect()
-    }),
-  );
+  for idxs in contribution_idxs.as_ref() {
+    for idxs in idxs.iter() {
+      for &v in idxs {
+        assert_ne!(v, std::usize::MAX);
+      }
+    }
+  }
+
+  dataset.set_edges(contributions, contribution_idxs);
 }

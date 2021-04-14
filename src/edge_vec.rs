@@ -27,8 +27,12 @@ impl<T> EdgeVec<T> {
     }
   }
 
+  pub fn len(&self) -> usize {
+    self.ends.len()
+  }
+
   pub fn iter(&self) -> impl Iterator<Item = &[T]> {
-    (0..self.ends.len()).map(move |i| &self[i])
+    (0..self.len()).map(move |i| &self[i])
   }
 
   pub fn reserve(&mut self, additional: usize) {

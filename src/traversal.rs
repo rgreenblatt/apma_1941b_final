@@ -614,10 +614,6 @@ pub mod test {
                 .collect()
             });
 
-            dbg!(count);
-            dbg!(idx);
-            dbg!(item_type);
-            dbg!(limit);
             gen_test_dists(
               start,
               limit,

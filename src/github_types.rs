@@ -100,14 +100,17 @@ impl<T> UserRepoPair<T> {
     }
   }
 
-  pub fn map<U>(self, f: impl Fn(T) -> U) -> UserRepoPair<U> {
+  pub fn map<U>(self, mut f: impl FnMut(T) -> U) -> UserRepoPair<U> {
     UserRepoPair {
       user: f(self.user),
       repo: f(self.repo),
     }
   }
 
-  pub fn map_with<U>(self, f: impl Fn(T, ItemType) -> U) -> UserRepoPair<U> {
+  pub fn map_with<U>(
+    self,
+    mut f: impl FnMut(T, ItemType) -> U,
+  ) -> UserRepoPair<U> {
     UserRepoPair {
       user: f(self.user, ItemType::User),
       repo: f(self.repo, ItemType::Repo),

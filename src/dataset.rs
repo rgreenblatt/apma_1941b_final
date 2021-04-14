@@ -227,6 +227,19 @@ impl Dataset {
     Ok(out)
   }
 
+  pub fn set_edges(
+    &mut self,
+    contributions_v: Vec<Contribution>,
+    contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
+  ) {
+    for (item_type, idxs) in contribution_idxs_v.as_ref().iter_with_types() {
+      assert_eq!(idxs.len(), self.len(item_type));
+    }
+
+    self.contributions_v = contributions_v;
+    self.contribution_idxs_v = contribution_idxs_v;
+  }
+
   pub fn new(
     user_iter: impl IntoIterator<Item = (User, String)>,
     repo_iter: impl IntoIterator<Item = (Repo, String)>,
