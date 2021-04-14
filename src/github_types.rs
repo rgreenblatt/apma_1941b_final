@@ -107,6 +107,13 @@ impl<T> UserRepoPair<T> {
     }
   }
 
+  pub fn map_with<U>(self, f: impl Fn(T, ItemType) -> U) -> UserRepoPair<U> {
+    UserRepoPair {
+      user: f(self.user, ItemType::User),
+      repo: f(self.repo, ItemType::Repo),
+    }
+  }
+
   pub fn iter_with_types(self) -> impl Iterator<Item = (ItemType, T)> {
     iter::once((ItemType::User, self.user))
       .chain(iter::once((ItemType::Repo, self.repo)))

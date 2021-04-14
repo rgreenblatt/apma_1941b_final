@@ -94,7 +94,7 @@ pub fn traverse(
   visited: &mut UserRepoPair<Vec<bool>>,
   dataset: &Dataset,
   limit: Option<usize>,
-  callback: impl FnMut(Node),
+  callback: impl FnMut(Node, usize),
 ) {
   traverse_gen(component, visited, dataset, limit, callback)
 }
@@ -104,7 +104,7 @@ pub fn traverse_dist(
   visited: &mut UserRepoPair<Vec<bool>>,
   dataset: &Dataset,
   limit: Option<usize>,
-  callback: impl FnMut(Node),
+  callback: impl FnMut(Node, usize),
 ) {
   // should be enforced by IdxDist
   #[cfg(debug_assertions)]
@@ -119,7 +119,7 @@ fn traverse_gen(
   visited: &mut UserRepoPair<Vec<bool>>,
   dataset: &Dataset,
   limit: Option<usize>,
-  mut callback: impl FnMut(Node),
+  mut callback: impl FnMut(Node, usize),
 ) {
   // one item
   assert!(component.user.idxs().len() + component.repo.idxs().len() <= 1);
@@ -196,7 +196,7 @@ fn traversal_step(
   visited: &mut UserRepoPair<Vec<bool>>,
   component: &mut UserRepoPair<impl ComponentAccess>,
   dataset: &Dataset,
-  callback: &mut impl FnMut(Node),
+  callback: &mut impl FnMut(Node, usize),
 ) {
   let start = &mut start[item_type];
   let (idxs, other_idxs) = component.as_mut().as_tup_with_first(item_type);
@@ -210,10 +210,13 @@ fn traversal_step(
           None
         } else {
           *other_visited = true;
-          callback(Node {
-            item_type: item_type.other(),
-            idx: other_idx,
-          });
+          callback(
+            Node {
+              item_type: item_type.other(),
+              idx: other_idx,
+            },
+            dist,
+          );
           Some(other_idx)
         }
       });
@@ -227,7 +230,7 @@ pub fn projected_traverse<T: ConnectionStrength>(
   visited: &mut Vec<bool>,
   projected_graph: &ProjectedGraph<T>,
   limit: Option<usize>,
-  callback: impl FnMut(usize),
+  callback: impl FnMut(usize, usize),
 ) {
   projected_traverse_gen(component, visited, projected_graph, limit, callback)
 }
@@ -237,7 +240,7 @@ pub fn projected_traverse_dist<T: ConnectionStrength>(
   visited: &mut Vec<bool>,
   projected_graph: &ProjectedGraph<T>,
   limit: Option<usize>,
-  callback: impl FnMut(usize),
+  callback: impl FnMut(usize, usize),
 ) {
   // should be enforced by IdxDist
   debug_assert_eq!(component.idxs_v.len(), component.dists_v.len());
@@ -249,7 +252,7 @@ fn projected_traverse_gen<T: ConnectionStrength>(
   visited: &mut Vec<bool>,
   projected_graph: &ProjectedGraph<T>,
   limit: Option<usize>,
-  mut callback: impl FnMut(usize),
+  mut callback: impl FnMut(usize, usize),
 ) {
   // one item
   assert!(component.idxs().len() <= 1);
@@ -291,7 +294,7 @@ fn projected_traversal_step<T: ConnectionStrength>(
   visited: &mut Vec<bool>,
   component: &mut impl ComponentAccess,
   projected_graph: &ProjectedGraph<T>,
-  callback: &mut impl FnMut(usize),
+  callback: &mut impl FnMut(usize, usize),
 ) {
   let end = component.idxs().len();
   for i in *start..end {
@@ -308,7 +311,7 @@ fn projected_traversal_step<T: ConnectionStrength>(
         None
       } else {
         *other_visited = true;
-        callback(other_idx);
+        callback(other_idx, dist);
         Some(other_idx)
       }
     });

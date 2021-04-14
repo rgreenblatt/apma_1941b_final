@@ -1,5 +1,6 @@
-use crate::{dataset::Dataset, ItemType};
-use fnv::FnvHashSet as Set;
+use crate::{dataset::Dataset, progress_bar::get_bar, ItemType, UserRepoPair};
+use fnv::FnvHashMap as Map;
+use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::NotNan;
 use std::{fmt, hash::Hash, iter, marker::PhantomData, ops, str::FromStr};
@@ -76,97 +77,68 @@ impl ConnectionStrengthValue for usize {
   }
 }
 
-fn other_contribution_idxs_iter(
-  item_type: ItemType,
-  idx: usize,
-  dataset: &Dataset,
-) -> impl Iterator<Item = (usize, &[usize])> + '_ {
-  let contribs = &dataset.contribution_idxs()[item_type][idx];
-
-  contribs.iter().map(move |&contrib_idx| {
-    let &other_idx =
-      &dataset.contributions()[contrib_idx].idx[item_type.other()];
-    (
-      contrib_idx,
-      &dataset.contribution_idxs()[item_type.other()][other_idx],
-    )
-  })
+pub struct ExpectationAccelerator<T: ConnectionStrength> {
+  maps: Vec<Map<usize, f64>>,
+  totals: Vec<f64>,
+  _phantom: PhantomData<T>,
 }
-
-fn probs(item_type: ItemType, idx: usize, dataset: &Dataset) -> Vec<f64> {
-  let total_degree = dataset.contributions().len() as f64;
-
-  let contribs = &dataset.contribution_idxs()[item_type][idx];
-  let degree = contribs.len() as f64;
-
-  let p_connect_per = degree / total_degree;
-
-  let mut probs: Vec<_> = other_contribution_idxs_iter(item_type, idx, dataset)
-    .map(|(_, other_contrib_idxs)| {
-      p_connect_per * (other_contrib_idxs.len() - 1) as f64
-    })
-    .collect();
-
-  let denom = 1. - probs.iter().map(|&p| 1. - p).product::<f64>();
-
-  for p in &mut probs {
-    *p /= denom;
-  }
-
-  probs
-}
-
-pub trait ConnectionStrength: Clone + Copy + fmt::Debug + Default {
-  type Value: ConnectionStrengthValue;
-
-  fn strength(
-    _item_type: ItemType,
-    contrib_idxs: [usize; 2],
-    dataset: &Dataset,
-  ) -> Self::Value {
-    let (l, r) = contrib_idxs
+impl<T: ConnectionStrength> ExpectationAccelerator<T> {
+  pub fn new(item_type: ItemType, dataset: &Dataset) -> Self {
+    let base_probs: Vec<_> = dataset.contribution_idxs()[item_type.other()]
       .iter()
-      .map(|&idx| dataset.contributions()[idx].num)
-      .next_tuple()
-      .unwrap();
-    Self::operation([l, r])
-  }
+      .map(|v| v.len().saturating_sub(1) as f64)
+      .collect();
 
-  fn expected(
-    item_type: ItemType,
-    items_idxs: [usize; 2],
-    dataset: &Dataset,
-  ) -> f64 {
-    let mut avoid = Set::default();
-    let expected: f64 = items_idxs
+    let total_degree = dataset.contributions().len() as f64;
+
+    let bar = get_bar(Some(dataset.len(item_type) as u64), 100_000);
+
+    let (maps, totals) = dataset.contribution_idxs()[item_type]
       .iter()
       .enumerate()
-      .map(|(i, &idx)| -> f64 {
-        let first = i == 0;
-        let probs = probs(item_type, idx, dataset);
-        other_contribution_idxs_iter(item_type, idx, dataset)
-          .zip(probs)
-          .map(|((contrib_idx, other_contrib_idxs), prob)| {
-            debug_assert_ne!(other_contrib_idxs.len(), 0);
+      .progress_with(bar)
+      .map(|(idx, contribs)| {
+        let degree = contribs.len() as f64;
 
+        let p_connect_per = degree / total_degree;
+
+        let mut probs: Vec<_> = contribs
+          .iter()
+          .map(|&contrib_idx| {
+            let other_idx =
+              dataset.contributions()[contrib_idx].idx[item_type.other()];
+            base_probs[other_idx] * p_connect_per
+          })
+          .collect();
+
+        let denom = 1. - probs.iter().map(|&p| 1. - p).product::<f64>();
+
+        for p in &mut probs {
+          *p /= denom;
+        }
+
+        let out: Map<_, _> = contribs
+          .iter()
+          .zip(probs)
+          .map(|(&contrib_idx, prob)| {
             let contrib = dataset.contributions()[contrib_idx];
 
-            let other_idx = contrib.idx[item_type.other()];
             debug_assert_eq!(contrib.idx[item_type], idx);
 
-            if first {
-              let out = avoid.insert(other_idx);
-              debug_assert!(out);
-            } else {
-              if avoid.contains(&other_idx) {
-                return 0.;
-              }
-            }
+            let other_idx = contrib.idx[item_type.other()];
+
+            let other_contrib_idxs =
+              &dataset.contribution_idxs()[item_type.other()][other_idx];
+
+            debug_assert_ne!(other_contrib_idxs.len(), 0);
 
             if other_contrib_idxs.len() == 1 {
-              return 0.;
+              // to avoid nan value
+              return (other_idx, 0.);
             }
+
             let len_other_than_us = (other_contrib_idxs.len() - 1) as f64;
+
             let total_operation = other_contrib_idxs
               .iter()
               .map(|&other_contrib_idx| {
@@ -185,19 +157,64 @@ pub trait ConnectionStrength: Clone + Copy + fmt::Debug + Default {
               .map(|other_contrib_idx| {
                 let other_contrib = dataset.contributions()[other_contrib_idx];
 
-                Self::operation([contrib.num, other_contrib.num]).to_float()
+                T::operation([contrib.num, other_contrib.num]).to_float()
               })
               .sum::<f64>();
 
             let mean_operation = total_operation / len_other_than_us;
 
-            mean_operation * prob
+            (other_idx, mean_operation * prob)
           })
-          .sum()
-      })
-      .sum();
+          .collect();
 
-    expected
+        let total = out.values().sum::<f64>();
+
+        (out, total)
+      })
+      .unzip();
+
+    Self {
+      maps,
+      totals,
+      _phantom: PhantomData {},
+    }
+  }
+
+  pub fn expectation(
+    &self,
+    items_idxs: [usize; 2],
+    common_other_idxs: &[usize],
+  ) -> f64 {
+    let mut total = items_idxs.iter().map(|&idx| self.totals[idx]).sum::<f64>();
+
+    for idx in common_other_idxs {
+      total -= self.maps[items_idxs[1]].get(idx).unwrap();
+    }
+    total
+  }
+}
+
+pub trait ConnectionStrength: Clone + Copy + fmt::Debug {
+  type Value: ConnectionStrengthValue;
+
+  fn strength(
+    &self,
+    _item_type: ItemType,
+    contrib_idxs: &[[usize; 2]],
+    _common_other_idxs: &[usize],
+    dataset: &Dataset,
+  ) -> Self::Value {
+    contrib_idxs
+      .iter()
+      .map(|contrib_idxs| {
+        let (l, r) = contrib_idxs
+          .iter()
+          .map(|&idx| dataset.contributions()[idx].num)
+          .next_tuple()
+          .unwrap();
+        Self::operation([l, r])
+      })
+      .sum()
   }
 
   fn operation(nums: [u32; 2]) -> Self::Value;
@@ -247,42 +264,53 @@ impl ConnectionStrength for GeometricMeanEvents {
   }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Default)]
-pub struct Normalized<T: ConnectionStrength> {
-  phantom: PhantomData<T>,
+#[derive(Clone, Copy)]
+pub struct Normalized<'a, T: ConnectionStrength> {
+  pub inner: T,
+  pub accelerators: &'a UserRepoPair<ExpectationAccelerator<T>>,
 }
 
-impl<T: ConnectionStrength> fmt::Debug for Normalized<T> {
+impl<'a, T: ConnectionStrength> fmt::Debug for Normalized<'a, T> {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "normalized_{:?}", T::default())
+    write!(f, "normalized_{:?}", &self.inner)
   }
 }
 
-impl<T: ConnectionStrength> ConnectionStrength for Normalized<T> {
+impl<'a, T: ConnectionStrength> ConnectionStrength for Normalized<'a, T> {
   type Value = NotNan<f64>;
 
   fn strength(
+    &self,
     item_type: ItemType,
-    contrib_idxs: [usize; 2],
+    contrib_idxs: &[[usize; 2]],
+    common_other_idxs: &[usize],
     dataset: &Dataset,
   ) -> Self::Value {
-    let strength = T::strength(item_type, contrib_idxs, dataset);
-    let (l_idx, r_idx) = contrib_idxs
+    let strength =
+      self
+        .inner
+        .strength(item_type, contrib_idxs, common_other_idxs, dataset);
+
+    let get_items = |iter: &[usize; 2]| {
+      iter
+        .iter()
+        .map(|&idx| dataset.contributions()[idx].idx[item_type])
+        .collect_tuple()
+        .unwrap()
+    };
+
+    let first = contrib_idxs.iter().next().unwrap();
+    let (l_idx, r_idx) = get_items(first);
+
+    debug_assert!(contrib_idxs
       .iter()
-      .map(|&idx| dataset.contributions()[idx].idx[item_type])
-      .collect_tuple()
-      .unwrap();
-    let expected = T::expected(item_type, [l_idx, r_idx], dataset);
+      .map(get_items)
+      .all(|(l, r)| l == l_idx && r == r_idx));
+
+    let expected = self.accelerators[item_type]
+      .expectation([l_idx, r_idx], common_other_idxs);
 
     NotNan::new(strength.to_float() / expected).unwrap()
-  }
-
-  fn expected(
-    _item_type: ItemType,
-    _items_idxs: [usize; 2],
-    _dataset: &Dataset,
-  ) -> f64 {
-    1.
   }
 
   fn operation(_nums: [u32; 2]) -> Self::Value {

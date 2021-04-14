@@ -22,13 +22,14 @@ anyhow = "1.0"
 git-url-parse = "0.3"
 flate2 = { version = "1.0", features = ["zlib-ng-compat"], default-features = false }
 structopt = "0.3"
-indicatif = "0.15"
+indicatif = { version = "0.15", features = ["rayon"] }
 base64 = "0.13"
 unzip-n = "0.1"
 dot = "0.1"
 fnv = "1.0"
 ordered-float = "2.1"
-
+rand = "0.8"
+rayon = "1.5"
 
 [dev-dependencies]
 proptest = "0.10"

@@ -30,7 +30,7 @@ pub fn save_subgraph<T: ConnectionStrength>(
     &mut visited,
     projected_graph,
     Some(limit),
-    |_| bar.inc(1),
+    |_, _| bar.inc(1),
   );
 
   let name = &dataset.names()[item_type][start];
@@ -56,7 +56,7 @@ pub fn save_subgraph<T: ConnectionStrength>(
     names: &dataset.names()[item_type],
   };
 
-  // dot::render(&graph, &mut writer)?;
+  dot::render(&graph, &mut writer)?;
 
   Ok(())
 }

@@ -3,6 +3,7 @@ use crate::{
   dataset::Dataset,
   output_data::{csv_reader, csv_writer},
   progress_bar::get_bar,
+  traversal::Component,
   ItemType,
 };
 use anyhow::Result;
@@ -16,7 +17,11 @@ pub struct ComponentSizeCsvEntry {
   pub count: usize,
 }
 
-pub fn save_component_sizes(dataset: &Dataset, csv_path: &Path) -> Result<()> {
+/// Returns giant component.
+pub fn save_component_sizes(
+  dataset: &Dataset,
+  csv_path: &Path,
+) -> Result<Option<Component>> {
   let mut counts = HashMap::new();
   let bar = get_bar(
     Some(
@@ -29,9 +34,20 @@ pub fn save_component_sizes(dataset: &Dataset, csv_path: &Path) -> Result<()> {
     ),
     1000,
   );
-  for item in components_callback(dataset, |_| bar.inc(1))
-    .map(|component| (component.user.len(), component.repo.len()))
-  {
+
+  let mut giant_component = None;
+  let mut max_num_users = 0;
+
+  for item in components_callback(dataset, |_| bar.inc(1)).map(|component| {
+    let out = (component.user.len(), component.repo.len());
+
+    if component.user.len() > max_num_users {
+      max_num_users = component.user.len();
+      giant_component = Some(component);
+    }
+
+    out
+  }) {
     *counts.entry(item).or_insert(0) += 1;
   }
 
@@ -51,7 +67,7 @@ pub fn save_component_sizes(dataset: &Dataset, csv_path: &Path) -> Result<()> {
   assert_eq!(total_user_size, dataset.len(ItemType::User));
   assert_eq!(total_repo_size, dataset.len(ItemType::Repo));
 
-  Ok(())
+  Ok(giant_component)
 }
 
 pub fn load_component_sizes(

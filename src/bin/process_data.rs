@@ -8,9 +8,11 @@ use github_net::{
   },
   dataset::Dataset,
   degree_dist_csv::save_degrees,
+  distances::{average_distance, compute_pseudo_diameter},
   item_name_to_save_name,
   projected_graph::ProjectedGraph,
   save_subgraph::save_subgraph,
+  traversal::Node,
   ItemType, UserRepoPair,
 };
 use std::{
@@ -29,7 +31,8 @@ struct Opt {
   #[structopt(short, long)]
   limit: Option<usize>,
 
-  /// Eliminate users with very large contribution to remove bots and spammers.
+  /// Eliminate users with very large contribution to remove (some) bots and
+  /// spammers.
   #[structopt(long, default_value = "500000")]
   max_user_contributions: usize,
 
@@ -52,6 +55,15 @@ struct Opt {
   /// Compute components and save as csv files.
   #[structopt(short, long)]
   components: bool,
+
+  /// Compute pseudo diameter of the giant component.
+  #[structopt(long, requires("components"))]
+  pseudo_diameter: bool,
+
+  /// Compute average distance in the giant component using some number of
+  /// samples.
+  #[structopt(long, requires("components"))]
+  average_distance_samples: Option<usize>,
 
   /// Save the projected subgraph close to this user.
   #[structopt(long, use_delimiter = true)]
@@ -121,22 +133,43 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
 }
 
 struct RunConnectionStrArgs<'a> {
-  item_type: ItemType,
-  prefix: &'a str,
   output_dir: &'a Path,
-  min_connection_str: &'a mut [f64],
-  subgraph_names: &'a [String],
+  min_connection_str: &'a mut UserRepoPair<Vec<f64>>,
+  subgraph_names: &'a UserRepoPair<Vec<String>>,
   subgraph_limit: usize,
   dataset: &'a Dataset,
   connection_str_stats: bool,
 }
 
-fn run_connection_str<'a, T: ConnectionStrength>(
+fn run_connection_outer<'a, T: ConnectionStrength>(
   args: RunConnectionStrArgs<'a>,
+  inner: T,
+  norm: bool,
+) -> Result<()> {
+  let ref accelerators =
+    UserRepoPair::<()>::default().map_with(|_, item_type| {
+      ExpectationAccelerator::new(item_type, args.dataset)
+    });
+  if norm {
+    run_connection_str(
+      args,
+      Normalized {
+        inner,
+        accelerators,
+      },
+      accelerators,
+    )
+  } else {
+    run_connection_str(args, inner, accelerators)
+  }
+}
+
+fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
+  args: RunConnectionStrArgs<'a>,
+  connection_strength: T,
+  accelerators: &UserRepoPair<ExpectationAccelerator<V>>,
 ) -> Result<()> {
   let RunConnectionStrArgs {
-    item_type,
-    prefix,
     output_dir,
     min_connection_str,
     subgraph_names,
@@ -145,62 +178,77 @@ fn run_connection_str<'a, T: ConnectionStrength>(
     connection_str_stats,
   } = args;
 
-  let output_dir: PathBuf = output_dir
-    .join(&format!("projected_{}", prefix))
-    .join(format!("{:?}", T::default()));
-
-  fs::create_dir_all(&output_dir)?;
-
-  println!(
-    "running projected graph for {} with connection strength type {:?}",
-    prefix,
-    T::default(),
-  );
-
-  if connection_str_stats {
-    save_connection_str_stats::<T>(&output_dir, item_type, &dataset)?;
-  }
-
-  min_connection_str.sort_by(|a, b| a.partial_cmp(b).unwrap());
-
-  let min_connection_str: Vec<T::Value> = min_connection_str
-    .into_iter()
-    .map(|v| ConnectionStrengthValue::from_float(*v))
-    .collect::<anyhow::Result<_>>()?;
-
-  let lowest = if let Some(lowest) = min_connection_str.get(0) {
-    lowest
-  } else {
-    return Ok(());
-  };
-
-  let mut projected_graph =
-    ProjectedGraph::<T>::from_dataset(item_type, lowest, &dataset);
-
-  for ref min_connection_str in min_connection_str {
-    println!("running for min connection strength {}", min_connection_str);
-
-    projected_graph =
-      projected_graph.filter_edges(dataset.len(item_type), min_connection_str);
-
-    let output_dir: PathBuf =
-      output_dir.join(format!("min_connection_str_{}", &min_connection_str));
+  for &(item_type, prefix) in
+    &[(ItemType::User, "user"), (ItemType::Repo, "repo")]
+  {
+    let output_dir: PathBuf = output_dir
+      .join(&format!("projected_{}", prefix))
+      .join(format!("{:?}", connection_strength));
 
     fs::create_dir_all(&output_dir)?;
 
-    for name in subgraph_names {
-      let idx = dataset.find_item(item_type, name).unwrap();
+    println!(
+      "running projected graph for {} with connection strength type {:?}",
+      prefix, connection_strength,
+    );
 
-      println!("saving subgraph for {:?} {}", item_type, name);
-
-      save_subgraph(
+    if connection_str_stats {
+      save_connection_str_stats(
         &output_dir,
-        idx,
-        subgraph_limit,
-        &projected_graph,
         item_type,
+        &connection_strength,
+        &accelerators[item_type],
         &dataset,
       )?;
+    }
+
+    let min_connection_str = &mut min_connection_str[item_type];
+
+    min_connection_str.sort_by(|a, b| a.partial_cmp(b).unwrap());
+
+    let min_connection_str: Vec<T::Value> = min_connection_str
+      .into_iter()
+      .map(|v| ConnectionStrengthValue::from_float(*v))
+      .collect::<anyhow::Result<_>>()?;
+
+    let lowest = if let Some(lowest) = min_connection_str.get(0) {
+      lowest
+    } else {
+      continue;
+    };
+
+    let mut projected_graph = ProjectedGraph::from_dataset(
+      item_type,
+      &connection_strength,
+      lowest,
+      &dataset,
+    );
+
+    for ref min_connection_str in min_connection_str {
+      println!("running for min connection strength {}", min_connection_str);
+
+      projected_graph = projected_graph
+        .filter_edges(dataset.len(item_type), min_connection_str);
+
+      let output_dir: PathBuf =
+        output_dir.join(format!("min_connection_str_{}", &min_connection_str));
+
+      fs::create_dir_all(&output_dir)?;
+
+      for name in &subgraph_names[item_type] {
+        let idx = dataset.find_item(item_type, name).unwrap();
+
+        println!("saving subgraph for {:?} {}", item_type, name);
+
+        save_subgraph(
+          &output_dir,
+          idx,
+          subgraph_limit,
+          &projected_graph,
+          item_type,
+          &dataset,
+        )?;
+      }
     }
   }
 
@@ -216,6 +264,8 @@ pub fn main() -> Result<()> {
     contributions_for_repo,
     degrees,
     components,
+    pseudo_diameter,
+    average_distance_samples,
     subgraph_user,
     subgraph_repo,
     subgraph_limit,
@@ -288,57 +338,86 @@ pub fn main() -> Result<()> {
 
     if components {
       println!("running components");
-      save_component_sizes(&dataset, &output_dir.join("component_sizes.csv"))?;
+      let giant_component = save_component_sizes(
+        &dataset,
+        &output_dir.join("component_sizes.csv"),
+      )?;
+
+      if let Some(giant_component) = giant_component {
+        let giant_n_repos = giant_component[ItemType::Repo].len();
+        let total_n_repos = dataset.len(ItemType::Repo);
+        if giant_n_repos < total_n_repos / 4 {
+          println!(
+            "WARN! giant component is quite small ({} / {} repos)",
+            giant_n_repos, total_n_repos
+          );
+        }
+        if pseudo_diameter {
+          println!("running pseudo diameter");
+
+          let pseudo_diameter = compute_pseudo_diameter(
+            Node {
+              item_type: ItemType::Repo,
+              idx: giant_component[ItemType::Repo][0],
+            },
+            &dataset,
+          );
+
+          println!("found pseudo diameter {}", pseudo_diameter);
+        }
+
+        if let Some(num_samples) = average_distance_samples {
+          println!("running average distances");
+
+          let distances =
+            average_distance(&giant_component, num_samples, &dataset);
+
+          let total = distances.iter().map(|&(_, d)| d).sum::<f64>();
+          let total_sqr =
+            distances.iter().map(|&(_, d)| d.powi(2)).sum::<f64>();
+
+          let avg = total / distances.len() as f64;
+          let avg_sqr = total_sqr / distances.len() as f64;
+          let var = avg_sqr - avg.powi(2);
+
+          println!(
+            "average distance is {} while variance of samples is {}",
+            avg, var
+          );
+        }
+      } else {
+        println!(
+          "Giant component wasn't found, so computations will be skipped!"
+        );
+      }
     }
 
-    for &(item_type, prefix) in
-      &[(ItemType::User, "user"), (ItemType::Repo, "repo")]
-    {
-      for &t in &connection_str_types {
-        let args = RunConnectionStrArgs {
-          item_type,
-          prefix,
-          output_dir: &output_dir,
-          min_connection_str: &mut projected_min_connection_str[item_type],
-          subgraph_limit,
-          subgraph_names: &subgraph_names[item_type],
-          connection_str_stats,
-          dataset: &dataset,
-        };
+    for &t in &connection_str_types {
+      let args = RunConnectionStrArgs {
+        output_dir: &output_dir,
+        min_connection_str: &mut projected_min_connection_str,
+        subgraph_limit,
+        subgraph_names: &subgraph_names,
+        connection_str_stats,
+        dataset: &dataset,
+      };
 
-        type CST = ConnectionStrengthTypes;
-        match t {
-          CST::NumCommonNodes(norm) => {
-            if norm {
-              run_connection_str::<Normalized<NumCommonNodes>>(args)
-            } else {
-              run_connection_str::<NumCommonNodes>(args)
-            }
-          }
-          CST::MinNumEvents(norm) => {
-            if norm {
-              run_connection_str::<Normalized<MinNumEvents>>(args)
-            } else {
-              run_connection_str::<MinNumEvents>(args)
-            }
-          }
+      type CST = ConnectionStrengthTypes;
+      match t {
+        CST::NumCommonNodes(norm) => {
+          run_connection_outer(args, NumCommonNodes::default(), norm)
+        }
+        CST::MinNumEvents(norm) => {
+          run_connection_outer(args, MinNumEvents::default(), norm)
+        }
 
-          CST::TotalNumEvents(norm) => {
-            if norm {
-              run_connection_str::<Normalized<TotalNumEvents>>(args)
-            } else {
-              run_connection_str::<TotalNumEvents>(args)
-            }
-          }
-          CST::GeometricMeanEvents(norm) => {
-            if norm {
-              run_connection_str::<Normalized<GeometricMeanEvents>>(args)
-            } else {
-              run_connection_str::<GeometricMeanEvents>(args)
-            }
-          }
-        }?;
-      }
+        CST::TotalNumEvents(norm) => {
+          run_connection_outer(args, TotalNumEvents::default(), norm)
+        }
+        CST::GeometricMeanEvents(norm) => {
+          run_connection_outer(args, GeometricMeanEvents::default(), norm)
+        }
+      }?;
     }
   }
 

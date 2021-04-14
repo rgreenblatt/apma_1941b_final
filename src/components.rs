@@ -61,7 +61,7 @@ where
       &mut self.visited,
       self.dataset,
       None,
-      |node| {
+      |node, _| {
         callback(node);
         let Node { item_type, idx } = node;
         let present = not_visited.as_mut()[item_type].remove(&idx);
