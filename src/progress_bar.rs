@@ -1,5 +1,6 @@
 use indicatif::{ProgressBar, ProgressStyle};
 
+#[must_use]
 pub fn get_bar(count: Option<u64>, draw_delta: u64) -> ProgressBar {
   let bar = ProgressBar::new(count.unwrap_or(!0));
   let template = if count.is_some() {

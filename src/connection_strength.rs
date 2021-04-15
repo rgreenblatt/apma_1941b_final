@@ -28,11 +28,13 @@ pub trait ConnectionStrengthValue:
   fn to_serializable(self) -> Self::S;
 }
 
+#[must_use]
 pub fn bin_float_place(v: f64, place: usize) -> NotNan<f64> {
   let place = NotNan::new(place as f64).unwrap();
   NotNan::new((NotNan::new(v).unwrap() * place).round()).unwrap() / place
 }
 
+#[must_use]
 pub fn bin_float(v: f64) -> NotNan<f64> {
   bin_float_place(v, 4)
 }
@@ -66,7 +68,8 @@ impl ConnectionStrengthValue for usize {
         "fractional part of number is non-zero in convert to integer"
       ));
     }
-    return Ok(v.round() as usize);
+
+    Ok(v.round() as usize)
   }
 
   fn to_float(self) -> f64 {
@@ -91,6 +94,7 @@ pub struct ExpectationAccelerator<'a, T: ConnectionStrength> {
 }
 
 impl<'a, T: ConnectionStrength> ExpectationAccelerator<'a, T> {
+  #[must_use]
   pub fn new(item_type: ItemType, dataset: &'a Dataset) -> Self {
     let (cached_items, overall_counts) = dataset.contribution_idxs()[item_type]
       .iter()
@@ -158,6 +162,7 @@ impl<'a, T: ConnectionStrength> ExpectationAccelerator<'a, T> {
     }
   }
 
+  #[must_use]
   pub fn expectation(&self, items_idxs: [usize; 2]) -> f64 {
     let total_degree = self.dataset.contributions().len() as f64;
     items_idxs
@@ -335,7 +340,7 @@ impl FromStr for ConnectionStrengthTypes {
 }
 
 #[test]
-pub fn basic_expectation() {
+fn basic_expectation() {
   use super::*;
   use crate::traversal::test::contrib_num;
 

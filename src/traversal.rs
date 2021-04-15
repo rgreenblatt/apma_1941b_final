@@ -17,10 +17,12 @@ pub struct IdxDist {
 pub type ComponentDists = UserRepoPair<IdxDist>;
 
 impl IdxDist {
+  #[must_use]
   pub fn idxs(&self) -> &[usize] {
     &self.idxs_v
   }
 
+  #[must_use]
   pub fn dists(&self) -> &[usize] {
     &self.dists_v
   }
@@ -71,12 +73,14 @@ impl From<Node> for ComponentDists {
   }
 }
 
+#[must_use]
 pub fn projected_make_component(start: usize) -> Vec<usize> {
   let mut out = Vec::new();
   out.add_items(0, iter::once(start));
   out
 }
 
+#[must_use]
 pub fn projected_make_component_dists(start: usize) -> IdxDist {
   let mut out = IdxDist::default();
   out.add_items(0, iter::once(start));
@@ -85,6 +89,7 @@ pub fn projected_make_component_dists(start: usize) -> IdxDist {
 
 pub type Visited = UserRepoPair<Vec<bool>>;
 
+#[must_use]
 pub fn default_visited(dataset: &Dataset) -> Visited {
   dataset.lens().map(|l| vec![false; l])
 }
@@ -199,7 +204,7 @@ fn traversal_step(
   callback: &mut impl FnMut(Node, usize),
 ) {
   let start = &mut start[item_type];
-  let [idxs, other_idxs] = component.as_mut().as_arr_with_first(item_type);
+  let [idxs, other_idxs] = component.as_mut().arr_with_first(item_type);
   for &idx in &idxs.idxs()[*start..] {
     let new_idxs = dataset.contribution_idxs()[item_type][idx]
       .iter()

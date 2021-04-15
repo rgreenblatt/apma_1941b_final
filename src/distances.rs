@@ -53,6 +53,7 @@ pub fn compute_pseudo_diameter(
   }
 }
 
+#[must_use]
 pub fn average_distance(
   giant_component: &Component,
   num_samples: usize,

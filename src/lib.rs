@@ -40,6 +40,7 @@ fn check_error<E: std::error::Error + Eq + Sync + Send + 'static>(
   Ok(())
 }
 
+#[must_use]
 pub fn item_name_to_save_name(name: &str) -> String {
   name.replace(&['/', '-'][..], "_")
 }

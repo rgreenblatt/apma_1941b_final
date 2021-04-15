@@ -27,8 +27,14 @@ impl<T> EdgeVec<T> {
     }
   }
 
+  #[must_use]
   pub fn len(&self) -> usize {
     self.ends.len()
+  }
+
+  #[must_use]
+  pub fn is_empty(&self) -> bool {
+    self.ends.is_empty()
   }
 
   pub fn iter(&self) -> impl Iterator<Item = &[T]> {

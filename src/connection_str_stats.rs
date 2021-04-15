@@ -39,14 +39,15 @@ pub struct ConnectionStrengthExpectedCsvEntry {
   pub example_github_id_second: github_api::ID,
 }
 
+type CountExamples1 = (usize, github_api::ID);
+type CountExamples2 = (usize, github_api::ID, github_api::ID);
+
 struct State<T: ConnectionStrength> {
-  degree_counts: Map<usize, (usize, github_api::ID)>,
-  strength_counts: Map<T::Value, (usize, github_api::ID, github_api::ID)>,
-  strength_normalized_counts:
-    Map<NotNan<f64>, (usize, github_api::ID, github_api::ID)>,
-  expected_counts: Map<NotNan<f64>, (usize, github_api::ID, github_api::ID)>,
-  strength_expected_counts:
-    Map<(NotNan<f64>, NotNan<f64>), (usize, github_api::ID, github_api::ID)>,
+  degree_counts: Map<usize, CountExamples1>,
+  strength_counts: Map<T::Value, CountExamples2>,
+  strength_normalized_counts: Map<NotNan<f64>, CountExamples2>,
+  expected_counts: Map<NotNan<f64>, CountExamples2>,
+  strength_expected_counts: Map<(NotNan<f64>, NotNan<f64>), CountExamples2>,
   total_expected: f64,
   total_strength: f64,
   total_sqr_strength: f64,
@@ -102,7 +103,8 @@ pub fn save_connection_str_stats<
 
     let mut state = state.lock().unwrap();
 
-    let example_github_id_first = dataset_info.get_github_id(item_type, start_idx);
+    let example_github_id_first =
+      dataset_info.get_github_id(item_type, start_idx);
     state
       .degree_counts
       .entry(values.len())
@@ -110,7 +112,8 @@ pub fn save_connection_str_stats<
       .0 += values.len();
     state.count += values.len();
     for (strength, expected, end_idx) in values {
-      let example_github_id_second = dataset_info.get_github_id(item_type, end_idx);
+      let example_github_id_second =
+        dataset_info.get_github_id(item_type, end_idx);
 
       let start_triple = (0, example_github_id_first, example_github_id_second);
 
@@ -222,7 +225,7 @@ pub fn save_connection_str_stats<
   save_sort_items(
     &output_dir.join("degrees.csv"),
     degree_counts,
-    |(degree, _)| degree.clone(),
+    |(degree, _)| *degree,
     |(degree, (count, example_github_id))| DegreeCsvEntry {
       degree,
       count,
@@ -247,7 +250,7 @@ pub fn save_connection_str_stats<
   save_sort_items(
     &output_dir.join("strengths_normalized.csv"),
     strength_normalized_counts,
-    |(strength, _)| strength.clone(),
+    |(strength, _)| *strength,
     |(strength, (count, example_github_id_first, example_github_id_second))| {
       ConnectionStrengthCsvEntry {
         strength: strength.to_serializable(),
@@ -261,7 +264,7 @@ pub fn save_connection_str_stats<
   save_sort_items(
     &output_dir.join("expected.csv"),
     expected_counts,
-    |(expected, _)| expected.clone(),
+    |(expected, _)| *expected,
     |(expected, (count, example_github_id_first, example_github_id_second))| {
       ConnectionStrengthCsvEntry {
         strength: expected.into_inner(),
@@ -275,7 +278,7 @@ pub fn save_connection_str_stats<
   save_sort_items(
     &output_dir.join("strength_expected.csv"),
     strength_expected_counts,
-    |(expected, _)| expected.clone(),
+    |(expected, _)| *expected,
     |(
       (strength, expected),
       (count, example_github_id_first, example_github_id_second),

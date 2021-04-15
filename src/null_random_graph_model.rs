@@ -7,6 +7,7 @@ use rand::{
   prelude::*,
 };
 
+#[must_use]
 pub fn gen_graph<R: RngCore>(
   num_users: usize,
   num_repos: usize,

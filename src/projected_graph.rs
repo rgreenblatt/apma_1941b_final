@@ -75,14 +75,17 @@ impl<T> ProjectedGraph<T>
 where
   T: ConnectionStrength,
 {
+  #[must_use]
   pub fn edges(&self) -> &[Edge<T>] {
     &self.edges_v
   }
 
+  #[must_use]
   pub fn edge_idxs(&self) -> &EdgeVec<usize> {
     &self.edge_idxs_v
   }
 
+  #[must_use]
   pub fn filter_edges(
     &self,
     num_items: usize,
@@ -120,6 +123,7 @@ where
     }
   }
 
+  #[must_use]
   pub fn from_dataset(
     item_type: ItemType,
     connection_strength: &T,

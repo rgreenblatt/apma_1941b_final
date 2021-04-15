@@ -50,6 +50,7 @@ pub enum ItemType {
 }
 
 impl ItemType {
+  #[must_use]
   pub fn other(self) -> Self {
     match self {
       Self::User => Self::Repo,
@@ -65,6 +66,7 @@ pub struct UserRepoPair<T> {
 }
 
 impl<T> UserRepoPair<T> {
+  #[must_use]
   pub fn same(value: T) -> Self
   where
     T: Clone,
@@ -75,6 +77,7 @@ impl<T> UserRepoPair<T> {
     }
   }
 
+  #[must_use]
   pub fn as_ref(&self) -> UserRepoPair<&T> {
     UserRepoPair {
       user: &self.user,
@@ -82,6 +85,7 @@ impl<T> UserRepoPair<T> {
     }
   }
 
+  #[must_use]
   pub fn as_mut(&mut self) -> UserRepoPair<&mut T> {
     UserRepoPair {
       user: &mut self.user,
@@ -89,7 +93,7 @@ impl<T> UserRepoPair<T> {
     }
   }
 
-  pub fn as_arr_with_first(self, item_type: ItemType) -> [T; 2] {
+  pub fn arr_with_first(self, item_type: ItemType) -> [T; 2] {
     match item_type {
       ItemType::User => [self.user, self.repo],
       ItemType::Repo => [self.repo, self.user],

@@ -50,14 +50,17 @@ pub struct ContributionInput {
 }
 
 impl DatasetWithInfo {
+  #[must_use]
   pub fn users(&self) -> &[User] {
     &self.users_v
   }
 
+  #[must_use]
   pub fn repos(&self) -> &[Repo] {
     &self.repos_v
   }
 
+  #[must_use]
   pub fn dataset(&self) -> &Dataset {
     &self.dataset_v
   }
@@ -78,26 +81,32 @@ impl DatasetWithInfo {
       .set_edges(contributions_v, contribution_idxs_v)
   }
 
+  #[must_use]
   pub fn names(&self) -> &UserRepoPair<Vec<String>> {
     &self.names_v
   }
 
+  #[must_use]
   pub fn user_logins(&self) -> &[String] {
     &self.names().user
   }
 
+  #[must_use]
   pub fn repo_names(&self) -> &[String] {
     &self.names().repo
   }
 
+  #[must_use]
   pub fn repo_github_id(&self, idx: usize) -> github_api::ID {
     self.get_github_id(ItemType::Repo, idx)
   }
 
+  #[must_use]
   pub fn user_github_id(&self, idx: usize) -> github_api::ID {
     self.get_github_id(ItemType::User, idx)
   }
 
+  #[must_use]
   pub fn get_github_id(
     &self,
     item_type: ItemType,
@@ -109,6 +118,7 @@ impl DatasetWithInfo {
     }
   }
 
+  #[must_use]
   pub fn github_ids(
     &self,
     item_type: ItemType,
@@ -126,6 +136,7 @@ impl DatasetWithInfo {
   /// *Slowly* find an item (linear search)
   /// Its faster to iterate for the few we need instead of building a hashmap
   /// etc.
+  #[must_use]
   pub fn find_item(&self, item_type: ItemType, name: &str) -> Option<usize> {
     self.names()[item_type]
       .iter()
@@ -213,6 +224,7 @@ impl DatasetWithInfo {
     Ok(out)
   }
 
+  #[must_use]
   pub fn new(
     user_iter: impl IntoIterator<Item = (User, String)>,
     repo_iter: impl IntoIterator<Item = (Repo, String)>,
@@ -383,6 +395,7 @@ impl DatasetWithInfo {
 }
 
 impl Dataset {
+  #[must_use]
   pub fn new(
     lens: UserRepoPair<usize>,
     contributions_v: Vec<Contribution>,
@@ -404,14 +417,17 @@ impl Dataset {
     }
   }
 
+  #[must_use]
   pub fn user_len(&self) -> usize {
     self.lens().user
   }
 
+  #[must_use]
   pub fn repo_len(&self) -> usize {
     self.lens().repo
   }
 
+  #[must_use]
   pub fn lens(&self) -> UserRepoPair<usize> {
     self.contribution_idxs().as_ref().map(|v| v.len())
   }
@@ -438,18 +454,22 @@ impl Dataset {
     self.contribution_idxs_v = contributions.map(|v| v.into_iter().collect());
   }
 
+  #[must_use]
   pub fn contributions(&self) -> &[Contribution] {
     &self.contributions_v
   }
 
+  #[must_use]
   pub fn contribution_idxs(&self) -> &UserRepoPair<EdgeVec<usize>> {
     &self.contribution_idxs_v
   }
 
+  #[must_use]
   pub fn user_contributions(&self) -> &EdgeVec<usize> {
     &self.contribution_idxs().user
   }
 
+  #[must_use]
   pub fn repo_contributions(&self) -> &EdgeVec<usize> {
     &self.contribution_idxs().repo
   }
@@ -469,6 +489,7 @@ impl Dataset {
 }
 
 #[cfg(test)]
+#[must_use]
 fn strat_contributions(
   user: impl Strategy<Value = usize>,
   repo: impl Strategy<Value = usize>,
@@ -489,6 +510,7 @@ fn strat_contributions(
 }
 
 #[cfg(test)]
+#[must_use]
 pub fn strategy(
   num_users: impl Strategy<Value = usize>,
   num_repos: impl Strategy<Value = usize>,

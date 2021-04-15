@@ -17,8 +17,8 @@ struct Opt {
 pub fn main() -> Result<()> {
   let opt = Opt::from_args();
 
-  let component_sizes: Vec<_> = load_component_sizes(&opt.path)?
-    .collect::<csv::Result<Vec<_>>>()?;
+  let component_sizes: Vec<_> =
+    load_component_sizes(&opt.path)?.collect::<csv::Result<Vec<_>>>()?;
 
   let (total_users, total_repos) = component_sizes.iter().fold(
     (0, 0),

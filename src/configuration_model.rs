@@ -13,6 +13,7 @@ struct DegreeItem {
   num: usize,
 }
 
+#[must_use]
 fn partition_point<T, P>(slice: &[T], mut pred: P) -> usize
 where
   P: FnMut(&T) -> bool,
@@ -59,7 +60,7 @@ pub fn gen_graph(dataset: &Dataset) -> Dataset {
     });
 
   let mut counts: Vec<_> = counts.into_iter().collect();
-  counts.sort();
+  counts.sort_unstable();
   let mut bins = Vec::new();
   let min_per_bin = 100_000;
 

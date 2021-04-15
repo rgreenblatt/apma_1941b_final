@@ -153,15 +153,14 @@ struct RunConnectionStrArgs<'a> {
   connection_str_stats: bool,
 }
 
-fn run_connection_outer<'a, T: ConnectionStrength>(
-  args: RunConnectionStrArgs<'a>,
+fn run_connection_outer<T: ConnectionStrength>(
+  args: RunConnectionStrArgs<'_>,
   inner: T,
   norm: bool,
 ) -> Result<()> {
-  let ref accelerators =
-    UserRepoPair::<()>::default().map_with(|_, item_type| {
-      ExpectationAccelerator::new(item_type, args.dataset_info.dataset())
-    });
+  let accelerators = &UserRepoPair::<()>::default().map_with(|_, item_type| {
+    ExpectationAccelerator::new(item_type, args.dataset_info.dataset())
+  });
   if norm {
     run_connection_str(
       args,
@@ -222,7 +221,7 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
     min_connection_str.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
     let min_connection_str: Vec<T::Value> = min_connection_str
-      .into_iter()
+      .iter()
       .map(|v| ConnectionStrengthValue::from_float(*v))
       .collect::<anyhow::Result<_>>()?;
 

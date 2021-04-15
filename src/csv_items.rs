@@ -10,6 +10,7 @@ pub struct ItemsPaths {
   pub contribution_csv_list: PathBuf,
 }
 
+#[must_use]
 pub fn get_csv_list_paths() -> ItemsPaths {
   dotenv::dotenv().ok();
 
