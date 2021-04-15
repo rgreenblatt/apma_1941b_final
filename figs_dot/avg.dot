@@ -1,0 +1,9 @@
+graph G {
+  node [style=filled,color=white];
+  Alice;
+  Bob;
+  Eve;
+
+  Alice -- Bob [label="70.5"];
+  Bob --  Eve [label="25.5"];
+}

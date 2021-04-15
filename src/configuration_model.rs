@@ -3,6 +3,7 @@ use crate::{
   UserRepoPair,
 };
 use fnv::{FnvHashMap as Map, FnvHashSet as Set};
+use rand::distributions::Uniform;
 use rand::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
@@ -59,7 +60,7 @@ pub fn gen_graph(dataset: &mut Dataset) {
   let mut counts: Vec<_> = counts.into_iter().collect();
   counts.sort();
   let mut bins = Vec::new();
-  let min_per_bin = 1000;
+  let min_per_bin = 100_000;
 
   let &(last, _) = counts.last().expect("empty input not allowed");
 
@@ -67,6 +68,7 @@ pub fn gen_graph(dataset: &mut Dataset) {
   for (num, count) in counts {
     tally += count;
     if tally > min_per_bin {
+      tally = 0;
       bins.push(num);
     }
   }
@@ -76,6 +78,13 @@ pub fn gen_graph(dataset: &mut Dataset) {
   if actual_last != last {
     bins.push(last);
   }
+
+  println!(
+    "num bins is {} with first {:?} and last {:?}",
+    bins.len(),
+    bins.get(0),
+    bins.last()
+  );
 
   let mut rng = StdRng::seed_from_u64(812388383);
 
@@ -114,7 +123,8 @@ pub fn gen_graph(dataset: &mut Dataset) {
       }
 
       let i = contributions.len();
-      let num = (repo.num + user.num) / 2;
+      let num = Uniform::from(repo.num.min(user.num)..=repo.num.max(user.num))
+        .sample(&mut rng);
       contribution_idxs.repo[repo.i][repo.j] = i;
       contribution_idxs.user[user.i][user.j] = i;
       contributions.push(Contribution {

@@ -1,0 +1,28 @@
+digraph G {
+  subgraph cluster_0 {
+    color=blue;
+    node [style=filled,color=white];
+    label = "users";
+    Alice;
+    Bob;
+    Eve;
+  }
+
+  subgraph cluster_1 {
+    color=red;
+    node [style=filled,color=grey];
+    label = "repos";
+    numpy;
+    ripgrep;
+    matplotlib;
+    scipy;
+  }
+
+  Alice -> numpy [label="30"];
+  Bob -> numpy [label="100"];
+  Bob -> scipy [label="50"];
+  Alice -> matplotlib [label="1"];
+  Bob -> matplotlib [label="10"];
+  Bob -> ripgrep [label="50"];
+  Eve -> ripgrep [label="1"];
+}

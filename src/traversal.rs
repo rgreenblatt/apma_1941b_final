@@ -374,7 +374,7 @@ pub mod test {
     let mut visited = default_visited(dataset);
     start.set_visited(&mut visited);
     let mut component = start.into();
-    traverse(&mut component, &mut visited, dataset, None, |_| {});
+    traverse(&mut component, &mut visited, dataset, None, |_, _| {});
     gen_test_no_limit_no_expected(dataset, &mut component).unwrap();
     sort_component(&mut component);
     sort_component(&mut expected_component);
@@ -390,7 +390,7 @@ pub mod test {
     let mut visited = default_visited(dataset);
     start.set_visited(&mut visited);
     let mut component = start.into();
-    traverse_dist(&mut component, &mut visited, dataset, limit, |_| {});
+    traverse_dist(&mut component, &mut visited, dataset, limit, |_, _| {});
     sort_component(&mut component);
     sort_component(&mut expected_component);
     assert_eq!(component, expected_component);
@@ -478,9 +478,10 @@ pub mod test {
     }
   }
 
-  pub fn contrib(
+  pub fn contrib_num(
     user_github_id: github_api::ID,
     repo_github_id: github_api::ID,
+    num: u32,
   ) -> ContributionInput {
     ContributionInput {
       user: User {
@@ -489,8 +490,15 @@ pub mod test {
       repo: Repo {
         github_id: repo_github_id,
       },
-      num: 1,
+      num,
     }
+  }
+
+  pub fn contrib(
+    user_github_id: github_api::ID,
+    repo_github_id: github_api::ID,
+  ) -> ContributionInput {
+    contrib_num(user_github_id, repo_github_id, 1)
   }
 
   pub fn small_disconnected_dataset(count: u32) -> Dataset {

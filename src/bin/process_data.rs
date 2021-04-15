@@ -299,6 +299,10 @@ pub fn main() -> Result<()> {
 
   let mut dataset = Dataset::load_limited(limit, Some(max_user_contributions))?;
 
+  println!("users: {}", dataset.len(ItemType::User));
+  println!("repos: {}", dataset.len(ItemType::Repo));
+  println!("connections: {}", dataset.contributions().len());
+
   let output_dir: PathBuf = if use_configuration_model {
     configuration_model::gen_graph(&mut dataset);
 

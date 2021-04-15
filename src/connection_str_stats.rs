@@ -5,6 +5,7 @@ use crate::{
   },
   dataset::Dataset,
   degree_dist_csv::save_sort_items,
+  github_api,
   projected_graph::transitive_edge_compute,
   ItemType,
 };
@@ -18,12 +19,15 @@ use std::{path::Path, sync::Mutex};
 pub struct DegreeCsvEntry {
   pub degree: usize,
   pub count: usize,
+  pub example_github_id: github_api::ID,
 }
 
 #[derive(Serialize)]
 pub struct ConnectionStrengthCsvEntry<S: Serialize> {
   pub strength: S,
   pub count: usize,
+  pub example_github_id_first: github_api::ID,
+  pub example_github_id_second: github_api::ID,
 }
 
 #[derive(Serialize)]
@@ -31,14 +35,18 @@ pub struct ConnectionStrengthExpectedCsvEntry {
   pub strength: f64,
   pub expected: f64,
   pub count: usize,
+  pub example_github_id_first: github_api::ID,
+  pub example_github_id_second: github_api::ID,
 }
 
 struct State<T: ConnectionStrength> {
-  degree_counts: Map<usize, usize>,
-  strength_counts: Map<T::Value, usize>,
-  strength_normalized_counts: Map<NotNan<f64>, usize>,
-  expected_counts: Map<NotNan<f64>, usize>,
-  strength_expected_counts: Map<(NotNan<f64>, NotNan<f64>), usize>,
+  degree_counts: Map<usize, (usize, github_api::ID)>,
+  strength_counts: Map<T::Value, (usize, github_api::ID, github_api::ID)>,
+  strength_normalized_counts:
+    Map<NotNan<f64>, (usize, github_api::ID, github_api::ID)>,
+  expected_counts: Map<NotNan<f64>, (usize, github_api::ID, github_api::ID)>,
+  strength_expected_counts:
+    Map<(NotNan<f64>, NotNan<f64>), (usize, github_api::ID, github_api::ID)>,
   total_expected: f64,
   total_strength: f64,
   total_sqr_strength: f64,
@@ -76,52 +84,59 @@ pub fn save_connection_str_stats<
   };
   let state = Mutex::new(state);
 
-  let f = |start_idx: usize,
-           mut edge_map: Map<_, (Vec<usize>, Vec<[usize; 2]>)>| {
+  let f = |start_idx: usize, mut edge_map: Map<_, Vec<[usize; 2]>>| {
     let values: Vec<_> = edge_map
       .drain()
-      .map(|(end_idx, (common_other_idxs, contrib_idxs))| {
+      .map(|(end_idx, contrib_idxs)| {
         let end_idx: usize = end_idx;
 
-        let strength = connection_strength.strength(
-          item_type,
-          &contrib_idxs,
-          &common_other_idxs,
-          dataset,
-        );
+        let strength =
+          connection_strength.strength(item_type, &contrib_idxs, dataset);
 
-        let expected =
-          accelerator.expectation([start_idx, end_idx], &common_other_idxs);
+        let expected = accelerator.expectation([start_idx, end_idx]);
 
-        (strength, expected)
+        (strength, expected, end_idx)
       })
       .collect();
 
     let mut state = state.lock().unwrap();
 
-    *state.degree_counts.entry(values.len()).or_insert(0) += values.len();
+    let example_github_id_first = dataset.get_github_id(item_type, start_idx);
+    state
+      .degree_counts
+      .entry(values.len())
+      .or_insert((0, example_github_id_first))
+      .0 += values.len();
     state.count += values.len();
-    for (strength, expected) in values {
-      *state
+    for (strength, expected, end_idx) in values {
+      let example_github_id_second = dataset.get_github_id(item_type, end_idx);
+
+      let start_triple = (0, example_github_id_first, example_github_id_second);
+
+      state
         .strength_counts
         .entry(strength.clone().bin())
-        .or_insert(0) += 1;
+        .or_insert(start_triple)
+        .0 += 1;
 
       let strength = strength.clone().to_float();
 
       let strength_normalized = strength / expected;
-      *state
+      state
         .strength_normalized_counts
         .entry(bin_float(strength_normalized))
-        .or_insert(0) += 1;
-      *state
+        .or_insert(start_triple)
+        .0 += 1;
+      state
         .expected_counts
         .entry(bin_float(expected))
-        .or_insert(0) += 1;
-      *state
+        .or_insert(start_triple)
+        .0 += 1;
+      state
         .strength_expected_counts
         .entry((bin_float_place(strength, 1), bin_float_place(expected, 1)))
-        .or_insert(0) += 1;
+        .or_insert(start_triple)
+        .0 += 1;
 
       state.total_expected += expected;
       state.total_strength += strength;
@@ -207,16 +222,24 @@ pub fn save_connection_str_stats<
     &output_dir.join("degrees.csv"),
     degree_counts,
     |(degree, _)| degree.clone(),
-    |(degree, count)| DegreeCsvEntry { degree, count },
+    |(degree, (count, example_github_id))| DegreeCsvEntry {
+      degree,
+      count,
+      example_github_id,
+    },
   )?;
 
   save_sort_items(
     &output_dir.join("strengths.csv"),
     strength_counts,
     |(strength, _): &(T::Value, _)| strength.clone(),
-    |(strength, count)| ConnectionStrengthCsvEntry {
-      strength: strength.to_serializable(),
-      count,
+    |(strength, (count, example_github_id_first, example_github_id_second))| {
+      ConnectionStrengthCsvEntry {
+        strength: strength.to_serializable(),
+        count,
+        example_github_id_first,
+        example_github_id_second,
+      }
     },
   )?;
 
@@ -224,9 +247,13 @@ pub fn save_connection_str_stats<
     &output_dir.join("strengths_normalized.csv"),
     strength_normalized_counts,
     |(strength, _)| strength.clone(),
-    |(strength, count)| ConnectionStrengthCsvEntry {
-      strength: strength.to_serializable(),
-      count,
+    |(strength, (count, example_github_id_first, example_github_id_second))| {
+      ConnectionStrengthCsvEntry {
+        strength: strength.to_serializable(),
+        count,
+        example_github_id_first,
+        example_github_id_second,
+      }
     },
   )?;
 
@@ -234,9 +261,13 @@ pub fn save_connection_str_stats<
     &output_dir.join("expected.csv"),
     expected_counts,
     |(expected, _)| expected.clone(),
-    |(expected, count)| ConnectionStrengthCsvEntry {
-      strength: expected.into_inner(),
-      count,
+    |(expected, (count, example_github_id_first, example_github_id_second))| {
+      ConnectionStrengthCsvEntry {
+        strength: expected.into_inner(),
+        count,
+        example_github_id_first,
+        example_github_id_second,
+      }
     },
   )?;
 
@@ -244,10 +275,15 @@ pub fn save_connection_str_stats<
     &output_dir.join("strength_expected.csv"),
     strength_expected_counts,
     |(expected, _)| expected.clone(),
-    |((strength, expected), count)| ConnectionStrengthExpectedCsvEntry {
+    |(
+      (strength, expected),
+      (count, example_github_id_first, example_github_id_second),
+    )| ConnectionStrengthExpectedCsvEntry {
       strength: strength.into_inner(),
       expected: expected.into_inner(),
       count,
+      example_github_id_first,
+      example_github_id_second,
     },
   )?;
 

@@ -112,6 +112,17 @@ impl Dataset {
     &self.contribution_idxs()[ItemType::Repo]
   }
 
+  pub fn get_github_id(
+    &self,
+    item_type: ItemType,
+    idx: usize,
+  ) -> github_api::ID {
+    match item_type {
+      ItemType::Repo => self.repos()[idx].get_github_id(),
+      ItemType::User => self.users()[idx].get_github_id(),
+    }
+  }
+
   pub fn github_ids(
     &self,
     item_type: ItemType,

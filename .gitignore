@@ -1,5 +1,7 @@
+/figs
+/figs_manual
+/figs_dot_out
 typings/
-
 /excluded_cache
 /configuration_model_figs
 /figs

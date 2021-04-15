@@ -28,7 +28,7 @@ pub struct ProjectedGraph<T: ConnectionStrength> {
 pub fn transitive_edge_compute(
   item_type: ItemType,
   dataset: &Dataset,
-  f: impl Fn(usize, Map<usize, (Vec<usize>, Vec<[usize; 2]>)>) + Send + Sync,
+  f: impl Fn(usize, Map<usize, Vec<[usize; 2]>>) + Send + Sync,
 ) {
   let num_items = dataset.len(item_type);
 
@@ -45,7 +45,7 @@ pub fn transitive_edge_compute(
     .into_par_iter()
     .progress_with(bar)
     .for_each(|start_idx| {
-      let mut edge_map: Map<_, (Vec<usize>, Vec<[usize; 2]>)> = Map::default();
+      let mut edge_map: Map<_, Vec<[usize; 2]>> = Map::default();
 
       for &first_contrib_idx in
         &dataset.contribution_idxs()[item_type][start_idx]
@@ -60,9 +60,10 @@ pub fn transitive_edge_compute(
           })
           .filter(|&(end_idx, _)| end_idx > start_idx)
         {
-          let entry = edge_map.entry(end_idx).or_insert_with(Default::default);
-          entry.0.push(middle_idx);
-          entry.1.push([first_contrib_idx, second_contrib_idx]);
+          edge_map
+            .entry(end_idx)
+            .or_insert_with(Default::default)
+            .push([first_contrib_idx, second_contrib_idx]);
         }
       }
 
@@ -127,15 +128,11 @@ where
   ) -> Self {
     let edges = Mutex::new(Vec::new());
 
-    let f = |start_idx, mut edge_map: Map<_, (Vec<usize>, Vec<[usize; 2]>)>| {
+    let f = |start_idx, mut edge_map: Map<_, Vec<[usize; 2]>>| {
       edges.lock().unwrap().extend(edge_map.drain().filter_map(
-        |(end_idx, (common_other_idxs, contrib_idxs))| {
-          let strength = connection_strength.strength(
-            item_type,
-            &contrib_idxs,
-            &common_other_idxs,
-            dataset,
-          );
+        |(end_idx, contrib_idxs)| {
+          let strength =
+            connection_strength.strength(item_type, &contrib_idxs, dataset);
           if strength >= *min_strength {
             let edge = Edge {
               node_idxs: [start_idx, end_idx],

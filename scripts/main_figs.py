@@ -4,6 +4,7 @@ import argparse
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
 
 FIG_DIR = 'figs/'
 OUTPUT_DATA_DIR = 'output_data/'
@@ -33,15 +34,35 @@ def projected(data_dir, fig_dir):
                                  sep=',')
             except FileNotFoundError:
                 continue
+
             degrees = df[header_name]
             counts = df['count']
 
-            plt.plot(degrees, counts)
-            plt.title(title)
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.savefig("{}/{}.png".format(connec_str_fig_dir, name))
-            plt.clf()
+            for use_y_log in [False, True]:
+                if header_name == 'degrees':
+                    plt.plot(degrees, counts)
+                else:
+                    _, bins = np.histogram(np.log10(degrees + 1),
+                                           weights=counts)
+                    _, bins = np.histogram(np.log10(degrees + 1),
+                                           bins=bins.size * 2,
+                                           weights=counts)
+                    plt.hist(degrees,
+                             weights=counts,
+                             bins=10**bins,
+                             density=True)
+                plt.title(title)
+                plt.xscale('log')
+                if use_y_log:
+                    plt.yscale('log')
+                    actual_name = name
+                else:
+                    plt.yscale('linear')
+                    actual_name = name + "_no_y_log"
+
+                plt.savefig("{}/{}.png".format(connec_str_fig_dir,
+                                               actual_name))
+                plt.clf()
 
         try:
             df = pd.read_csv("{}/{}.csv".format(connec_str_data_dir,
@@ -68,7 +89,21 @@ def projected(data_dir, fig_dir):
 
         print("correlation between strength and expected is: ", correlation)
 
-        plt.scatter(strength, expected, s=counts)
+        _, x_bins, y_bins = np.histogram2d(np.log10(expected + 1),
+                                           np.log10(strength + 1),
+                                           weights=counts)
+        _, x_bins, y_bins = np.histogram2d(
+            np.log10(expected + 1),
+            np.log10(strength + 1),
+            bins=[2 * x_bins.size, 2 * y_bins.size],
+            weights=counts)
+
+        plt.hist2d(expected,
+                   strength,
+                   weights=counts,
+                   bins=[10**x_bins, 10**y_bins],
+                   norm=matplotlib.colors.LogNorm())
+        plt.colorbar()
         plt.title("strength vs expected (predicted)")
         plt.xscale('log')
         plt.yscale('log')
@@ -131,8 +166,9 @@ def main():
 
         plt.hist2d(users,
                    repos,
-                   weights=np.log(counts),
-                   bins=[users.max(), repos.max()])
+                   weights=counts,
+                   bins=[users.max(), repos.max()],
+                   norm=matplotlib.colors.LogNorm())
         plt.title("component sizes")
         plt.xlabel("users")
         plt.ylabel("repos")

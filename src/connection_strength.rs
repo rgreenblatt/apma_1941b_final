@@ -1,6 +1,5 @@
-use crate::{dataset::Dataset, progress_bar::get_bar, ItemType, UserRepoPair};
+use crate::{dataset::Dataset, edge_vec::EdgeVec, ItemType, UserRepoPair};
 use fnv::FnvHashMap as Map;
-use indicatif::ProgressIterator;
 use itertools::Itertools;
 use ordered_float::NotNan;
 use std::{fmt, hash::Hash, iter, marker::PhantomData, ops, str::FromStr};
@@ -83,123 +82,101 @@ impl ConnectionStrengthValue for usize {
   }
 }
 
-pub struct ExpectationAccelerator<T: ConnectionStrength> {
-  maps: Vec<Map<usize, f64>>,
-  totals: Vec<f64>,
+pub struct ExpectationAccelerator<'a, T: ConnectionStrength> {
+  cached_items: EdgeVec<(i32, f64)>,
+  overall_counts: Vec<i32>,
+  dataset: &'a Dataset,
+  item_type: ItemType,
   _phantom: PhantomData<T>,
 }
-impl<T: ConnectionStrength> ExpectationAccelerator<T> {
-  pub fn new(item_type: ItemType, dataset: &Dataset) -> Self {
-    let base_probs: Vec<_> = dataset.contribution_idxs()[item_type.other()]
-      .iter()
-      .map(|v| v.len().saturating_sub(1) as f64)
-      .collect();
 
-    let total_degree = dataset.contributions().len() as f64;
-
-    let bar = get_bar(Some(dataset.len(item_type) as u64), 100_000);
-
-    let (maps, totals) = dataset.contribution_idxs()[item_type]
+impl<'a, T: ConnectionStrength> ExpectationAccelerator<'a, T> {
+  pub fn new(item_type: ItemType, dataset: &'a Dataset) -> Self {
+    let (cached_items, overall_counts) = dataset.contribution_idxs()[item_type]
       .iter()
       .enumerate()
-      .progress_with(bar)
       .map(|(idx, contribs)| {
-        let degree = contribs.len() as f64;
+        let mut overall_count = 0;
+        let mut totals = Map::default();
+        for &contrib_idx in contribs {
+          let contrib = dataset.contributions()[contrib_idx];
 
-        let p_connect_per = degree / total_degree;
+          debug_assert_eq!(contrib.idx[item_type], idx);
 
-        let mut probs: Vec<_> = contribs
-          .iter()
-          .map(|&contrib_idx| {
-            let other_idx =
-              dataset.contributions()[contrib_idx].idx[item_type.other()];
-            base_probs[other_idx] * p_connect_per
-          })
-          .collect();
+          let other_idx = contrib.idx[item_type.other()];
 
-        let denom = 1. - probs.iter().map(|&p| 1. - p).product::<f64>();
+          let other_contrib_idxs =
+            &dataset.contribution_idxs()[item_type.other()][other_idx];
 
-        for p in &mut probs {
-          *p /= denom;
+          debug_assert_ne!(other_contrib_idxs.len(), 0);
+
+          if other_contrib_idxs.len() == 1 {
+            // to avoid nan value
+            continue;
+          }
+
+          let total_operation = other_contrib_idxs
+            .iter()
+            .map(|&other_contrib_idx| {
+              debug_assert_eq!(
+                contrib.idx[item_type.other()],
+                dataset.contributions()[other_contrib_idx].idx
+                  [item_type.other()]
+              );
+
+              other_contrib_idx
+            })
+            .filter(|&other_contrib_idx| {
+              // avoid iterating on "our" contribution edge
+              contrib_idx != other_contrib_idx
+            })
+            .map(|other_contrib_idx| {
+              let other_contrib = dataset.contributions()[other_contrib_idx];
+
+              T::operation([contrib.num, other_contrib.num]).to_float()
+            })
+            .sum::<f64>();
+
+          let len_other_than_us = (other_contrib_idxs.len() - 1) as i32;
+
+          overall_count += len_other_than_us;
+
+          *totals.entry(len_other_than_us).or_insert(0.) +=
+            total_operation / len_other_than_us as f64;
         }
 
-        let out: Map<_, _> = contribs
-          .iter()
-          .zip(probs)
-          .map(|(&contrib_idx, prob)| {
-            let contrib = dataset.contributions()[contrib_idx];
-
-            debug_assert_eq!(contrib.idx[item_type], idx);
-
-            let other_idx = contrib.idx[item_type.other()];
-
-            let other_contrib_idxs =
-              &dataset.contribution_idxs()[item_type.other()][other_idx];
-
-            debug_assert_ne!(other_contrib_idxs.len(), 0);
-
-            if other_contrib_idxs.len() == 1 {
-              // to avoid nan value
-              return (other_idx, 0.);
-            }
-
-            let len_other_than_us = (other_contrib_idxs.len() - 1) as f64;
-
-            let total_operation = other_contrib_idxs
-              .iter()
-              .map(|&other_contrib_idx| {
-                debug_assert_eq!(
-                  contrib.idx[item_type.other()],
-                  dataset.contributions()[other_contrib_idx].idx
-                    [item_type.other()]
-                );
-
-                other_contrib_idx
-              })
-              .filter(|&other_contrib_idx| {
-                // avoid iterating on "our" contribution edge
-                contrib_idx != other_contrib_idx
-              })
-              .map(|other_contrib_idx| {
-                let other_contrib = dataset.contributions()[other_contrib_idx];
-
-                T::operation([contrib.num, other_contrib.num]).to_float()
-              })
-              .sum::<f64>();
-
-            let mean_operation = total_operation / len_other_than_us;
-
-            (other_idx, mean_operation * prob)
-          })
-          .collect();
-
-        let total = out.values().sum::<f64>();
-
-        (out, total)
+        (totals, overall_count)
       })
       .unzip();
 
     Self {
-      maps,
-      totals,
+      cached_items,
+      overall_counts,
+      item_type,
+      dataset,
       _phantom: PhantomData {},
     }
   }
 
-  pub fn expectation(
-    &self,
-    items_idxs: [usize; 2],
-    common_other_idxs: &[usize],
-  ) -> f64 {
-    let mut total = items_idxs.iter().map(|&idx| self.totals[idx]).sum::<f64>();
+  pub fn expectation(&self, items_idxs: [usize; 2]) -> f64 {
+    let total_degree = self.dataset.contributions().len() as f64;
+    items_idxs
+      .iter()
+      .zip(items_idxs.iter().rev())
+      .map(|(&idx, &other_idx)| {
+        let other_degree = self.dataset.contribution_idxs()[self.item_type]
+          [other_idx]
+          .len() as f64;
+        let p = other_degree / total_degree;
 
-    for idx in common_other_idxs {
-      total -= self.maps[items_idxs[1]].get(idx).unwrap();
-    }
-
-    debug_assert!(total > 0.);
-
-    total
+        self.cached_items[idx]
+          .iter()
+          .map(|&(pow, mean_op)| (1. - (1. - p).powi(pow)) * mean_op)
+          .sum::<f64>()
+          / (1. - (1. - p).powi(self.overall_counts[idx]))
+      })
+      .sum::<f64>()
+      / 2.
   }
 }
 
@@ -210,7 +187,6 @@ pub trait ConnectionStrength: Clone + Copy + fmt::Debug + Sync + Send {
     &self,
     _item_type: ItemType,
     contrib_idxs: &[[usize; 2]],
-    _common_other_idxs: &[usize],
     dataset: &Dataset,
   ) -> Self::Value {
     contrib_idxs
@@ -276,7 +252,7 @@ impl ConnectionStrength for GeometricMeanEvents {
 #[derive(Clone, Copy)]
 pub struct Normalized<'a, T: ConnectionStrength> {
   pub inner: T,
-  pub accelerators: &'a UserRepoPair<ExpectationAccelerator<T>>,
+  pub accelerators: &'a UserRepoPair<ExpectationAccelerator<'a, T>>,
 }
 
 impl<'a, T: ConnectionStrength> fmt::Debug for Normalized<'a, T> {
@@ -292,13 +268,9 @@ impl<'a, T: ConnectionStrength> ConnectionStrength for Normalized<'a, T> {
     &self,
     item_type: ItemType,
     contrib_idxs: &[[usize; 2]],
-    common_other_idxs: &[usize],
     dataset: &Dataset,
   ) -> Self::Value {
-    let strength =
-      self
-        .inner
-        .strength(item_type, contrib_idxs, common_other_idxs, dataset);
+    let strength = self.inner.strength(item_type, contrib_idxs, dataset);
 
     let get_items = |iter: &[usize; 2]| {
       iter
@@ -316,8 +288,7 @@ impl<'a, T: ConnectionStrength> ConnectionStrength for Normalized<'a, T> {
       .map(get_items)
       .all(|(l, r)| l == l_idx && r == r_idx));
 
-    let expected = self.accelerators[item_type]
-      .expectation([l_idx, r_idx], common_other_idxs);
+    let expected = self.accelerators[item_type].expectation([l_idx, r_idx]);
 
     NotNan::new(strength.to_float() / expected).unwrap()
   }
@@ -361,4 +332,79 @@ impl FromStr for ConnectionStrengthTypes {
 
     Ok(out)
   }
+}
+
+#[test]
+pub fn basic_expectation() {
+  use super::*;
+  use crate::traversal::test::{contrib_num, repos, users};
+
+  let large_repo: Vec<_> = (0..10).map(|i| contrib_num(i, 0, 10 + i)).collect();
+  let other_large_repo: Vec<_> =
+    (5..9).map(|i| contrib_num(i, 2, 10 + i)).collect();
+
+  let contributions = vec![
+    contrib_num(4, 1, 5),
+    contrib_num(4, 2, 10),
+    contrib_num(4, 3, 10),
+    contrib_num(11, 3, 10),
+  ];
+
+  let dataset = Dataset::new(
+    users(11),
+    repos(4),
+    large_repo
+      .into_iter()
+      .chain(other_large_repo)
+      .chain(contributions),
+    false,
+  );
+
+  let accel =
+    ExpectationAccelerator::<NumCommonNodes>::new(ItemType::Repo, &dataset);
+
+  const EPS: f64 = 1e-10;
+
+  let total_degree = dataset.contributions().len() as f64;
+
+  let p_1 = 1. / total_degree;
+
+  let v = (1.
+    + (4. * (1. - (1. - p_1)) + (1. - (1. - p_1).powi(3)))
+      / (1. - (1. - p_1).powi(7)))
+    / 2.;
+
+  assert!((accel.expectation([1, 2]) - v).abs() < EPS);
+  assert!((accel.expectation([2, 1]) - v).abs() < EPS);
+  assert!((accel.expectation([1, 3]) - 1.).abs() < EPS);
+  assert!((accel.expectation([3, 1]) - 1.).abs() < EPS);
+
+  let p_2 = 5. / total_degree;
+  let p_0 = 10. / total_degree;
+
+  let v = ((4. * (1. - (1. - p_0)) + (1. - (1. - p_0).powi(3)))
+    / (1. - (1. - p_0).powi(7))
+    + (4. * (1. - (1. - p_2)) + (1. - (1. - p_2).powi(3)))
+      / (1. - (1. - p_2).powi(7)))
+    / 2.;
+
+  assert!((accel.expectation([0, 2]) - v).abs() < EPS);
+
+  let accel =
+    ExpectationAccelerator::<MinNumEvents>::new(ItemType::Repo, &dataset);
+
+  let v = (5.
+    + ((1. - (1. - p_1)) * 15.
+      + (1. - (1. - p_1)) * 16.
+      + (1. - (1. - p_1)) * 17.
+      + (1. - (1. - p_1)) * 18.
+      + (1. - (1. - p_1).powi(3)) * (10. + 10. + 5.) / 3.)
+      / (1. - (1. - p_1).powi(7)))
+    / 2.;
+
+  assert!((accel.expectation([1, 2]) - v).abs() < EPS);
+  assert!((accel.expectation([2, 1]) - v).abs() < EPS);
+  let v = (5. + (10. + 10. + 5.) / 3.) / 2.;
+  assert!((accel.expectation([1, 3]) - v).abs() < EPS);
+  assert!((accel.expectation([3, 1]) - v).abs() < EPS);
 }
