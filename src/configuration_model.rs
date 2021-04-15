@@ -1,5 +1,5 @@
 use crate::{
-  dataset::{Contribution, Dataset},
+  dataset::{Contribution, Dataset, Lens},
   UserRepoPair,
 };
 use fnv::{FnvHashMap as Map, FnvHashSet as Set};
@@ -62,7 +62,7 @@ pub fn gen_graph(dataset: &Dataset) -> Dataset {
   let mut counts: Vec<_> = counts.into_iter().collect();
   counts.sort_unstable();
   let mut bins = Vec::new();
-  let min_per_bin = 100_000;
+  let min_per_bin = 1000;
 
   let &(last, _) = counts.last().expect("empty input not allowed");
 

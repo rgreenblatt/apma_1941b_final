@@ -1,5 +1,5 @@
 use crate::{
-  dataset::Dataset,
+  dataset::{Dataset, Lens},
   traversal::{default_visited, traverse, Component, Node},
   UserRepoPair,
 };

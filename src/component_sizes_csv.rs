@@ -1,6 +1,6 @@
 use crate::{
   components::components_callback,
-  dataset::Dataset,
+  dataset::{Dataset, Lens},
   output_data::{csv_reader, csv_writer},
   progress_bar::get_bar,
   traversal::Component,

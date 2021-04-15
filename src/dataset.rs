@@ -12,7 +12,9 @@ use fnv::{FnvHashMap as Map, FnvHashSet as Set};
 use indicatif::ProgressIterator;
 #[cfg(test)]
 use proptest::prelude::*;
+use serde::Serialize;
 use std::{
+  fmt,
   fs::{self, File},
   hash::Hash,
   path::{Path, PathBuf},
@@ -31,11 +33,10 @@ pub struct Dataset {
   contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
 }
 
-pub struct DatasetWithInfo {
+pub struct DatasetInfo {
   users_v: Vec<User>,
   repos_v: Vec<Repo>,
   names_v: UserRepoPair<Vec<String>>,
-  dataset_v: Dataset,
 }
 
 unzip_n!(3);
@@ -49,7 +50,7 @@ pub struct ContributionInput {
   pub num: usize,
 }
 
-impl DatasetWithInfo {
+impl DatasetInfo {
   #[must_use]
   pub fn users(&self) -> &[User] {
     &self.users_v
@@ -58,27 +59,6 @@ impl DatasetWithInfo {
   #[must_use]
   pub fn repos(&self) -> &[Repo] {
     &self.repos_v
-  }
-
-  #[must_use]
-  pub fn dataset(&self) -> &Dataset {
-    &self.dataset_v
-  }
-
-  /// TODO: change/remove?
-  pub fn filter_contributions(&mut self, min_contribution: usize) {
-    self.dataset_v.filter_contributions(min_contribution)
-  }
-
-  // TODO: change/remove?
-  pub fn set_edges(
-    &mut self,
-    contributions_v: Vec<Contribution>,
-    contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
-  ) {
-    self
-      .dataset_v
-      .set_edges(contributions_v, contribution_idxs_v)
   }
 
   #[must_use]
@@ -94,55 +74,6 @@ impl DatasetWithInfo {
   #[must_use]
   pub fn repo_names(&self) -> &[String] {
     &self.names().repo
-  }
-
-  #[must_use]
-  pub fn repo_github_id(&self, idx: usize) -> github_api::ID {
-    self.get_github_id(ItemType::Repo, idx)
-  }
-
-  #[must_use]
-  pub fn user_github_id(&self, idx: usize) -> github_api::ID {
-    self.get_github_id(ItemType::User, idx)
-  }
-
-  #[must_use]
-  pub fn get_github_id(
-    &self,
-    item_type: ItemType,
-    idx: usize,
-  ) -> github_api::ID {
-    match item_type {
-      ItemType::Repo => self.repos()[idx].get_github_id(),
-      ItemType::User => self.users()[idx].get_github_id(),
-    }
-  }
-
-  #[must_use]
-  pub fn github_ids(
-    &self,
-    item_type: ItemType,
-  ) -> Box<dyn Iterator<Item = github_api::ID> + '_> {
-    match item_type {
-      ItemType::Repo => {
-        Box::new(self.repos().iter().map(HasGithubID::get_github_id))
-      }
-      ItemType::User => {
-        Box::new(self.users().iter().map(HasGithubID::get_github_id))
-      }
-    }
-  }
-
-  /// *Slowly* find an item (linear search)
-  /// Its faster to iterate for the few we need instead of building a hashmap
-  /// etc.
-  #[must_use]
-  pub fn find_item(&self, item_type: ItemType, name: &str) -> Option<usize> {
-    self.names()[item_type]
-      .iter()
-      .enumerate()
-      .find(|(_, other_name)| other_name == &name)
-      .map(|(idx, _)| idx)
   }
 
   fn collect_items<T: Hash + Eq + Clone, E>(
@@ -161,7 +92,7 @@ impl DatasetWithInfo {
     repo_iter: impl IntoIterator<Item = Result<(Repo, String), E>>,
     contributions_iter: impl IntoIterator<Item = Result<ContributionInput, E>>,
     all_contributions_must_be_used: bool,
-  ) -> Result<Self, E> {
+  ) -> Result<(Self, Dataset), E> {
     let (users_v, user_logins_v, user_to_idx) = Self::collect_items(user_iter)?;
     let (repos_v, repo_names_v, repo_to_idx) = Self::collect_items(repo_iter)?;
 
@@ -206,22 +137,22 @@ impl DatasetWithInfo {
     let out = Self {
       users_v,
       repos_v,
-      dataset_v: Dataset::new(lens, contributions_v),
       names_v,
     };
 
+    let dataset = Dataset::new(lens, contributions_v);
+
     #[cfg(debug_assertions)]
-    out
-      .dataset()
+    dataset
       .contribution_idxs_v
       .as_ref()
       .into_iter()
       .flat_map(|v| v.iter().flat_map(|v| v.iter()))
       .for_each(|&idx| {
-        debug_assert!(idx < out.dataset().contributions_v.len());
+        debug_assert!(idx < dataset.contributions_v.len());
       });
 
-    Ok(out)
+    Ok((out, dataset))
   }
 
   #[must_use]
@@ -230,9 +161,9 @@ impl DatasetWithInfo {
     repo_iter: impl IntoIterator<Item = (Repo, String)>,
     contributions_iter: impl IntoIterator<Item = ContributionInput>,
     all_contributions_must_be_used: bool,
-  ) -> Self {
+  ) -> (Self, Dataset) {
     // should be never type
-    let out: Result<Self, ()> = Self::new_error(
+    let out: Result<_, ()> = Self::new_error(
       user_iter.into_iter().map(Ok),
       repo_iter.into_iter().map(Ok),
       contributions_iter.into_iter().map(Ok),
@@ -244,7 +175,7 @@ impl DatasetWithInfo {
   pub fn load_limited_exclude(
     limit: Option<usize>,
     users_to_exclude: &Set<User>,
-  ) -> anyhow::Result<Self> {
+  ) -> anyhow::Result<(Self, Dataset)> {
     let items = get_csv_list_paths();
 
     let get_bar = || get_bar(None, 10_000);
@@ -346,7 +277,7 @@ impl DatasetWithInfo {
   pub fn load_limited(
     limit: Option<usize>,
     user_exclude_contributions_thresh: Option<usize>,
-  ) -> anyhow::Result<Self> {
+  ) -> anyhow::Result<(Self, Dataset)> {
     if let Some(excluded) =
       user_exclude_contributions_thresh.and_then(Self::cache_lookup)
     {
@@ -355,9 +286,8 @@ impl DatasetWithInfo {
     }
     let out = Self::load_limited_exclude(limit, &Default::default());
     if let Some(thresh) = user_exclude_contributions_thresh {
-      let out = out?;
-      let excluded: Set<_> = out
-        .dataset()
+      let (out, dataset) = out?;
+      let excluded: Set<_> = dataset
         .user_contributions()
         .iter()
         .zip(out.users())
@@ -365,7 +295,7 @@ impl DatasetWithInfo {
           let total_contribs = contribs
             .iter()
             .map(|&contrib_idx| {
-              out.dataset().contributions()[contrib_idx].num as usize
+              dataset.contributions()[contrib_idx].num as usize
             })
             .sum::<usize>();
 
@@ -382,7 +312,7 @@ impl DatasetWithInfo {
       }
 
       if excluded.is_empty() {
-        return Ok(out);
+        return Ok((out, dataset));
       }
 
       // this is inefficient, but saves memory
@@ -418,43 +348,6 @@ impl Dataset {
   }
 
   #[must_use]
-  pub fn user_len(&self) -> usize {
-    self.lens().user
-  }
-
-  #[must_use]
-  pub fn repo_len(&self) -> usize {
-    self.lens().repo
-  }
-
-  #[must_use]
-  pub fn lens(&self) -> UserRepoPair<usize> {
-    self.contribution_idxs().as_ref().map(|v| v.len())
-  }
-
-  // TODO: change/remove?
-  pub fn filter_contributions(&mut self, min_contribution: usize) {
-    if min_contribution == 0 {
-      return;
-    }
-    let mut contributions = self.lens().map(|l| vec![Vec::new(); l]);
-
-    self.contributions_v = self
-      .contributions_v
-      .iter()
-      .filter(|contrib| contrib.num >= min_contribution)
-      .enumerate()
-      .map(|(i, contrib)| {
-        for (item_type, idx) in contrib.idx.iter_with() {
-          contributions[item_type][idx].push(i)
-        }
-        *contrib
-      })
-      .collect();
-    self.contribution_idxs_v = contributions.map(|v| v.into_iter().collect());
-  }
-
-  #[must_use]
   pub fn contributions(&self) -> &[Contribution] {
     &self.contributions_v
   }
@@ -485,6 +378,132 @@ impl Dataset {
 
     self.contributions_v = contributions_v;
     self.contribution_idxs_v = contribution_idxs_v;
+  }
+
+  // TODO: change/remove?
+  pub fn filter_contributions(&mut self, min_contribution: usize) {
+    if min_contribution == 0 {
+      return;
+    }
+    let mut contributions = self.lens().map(|l| vec![Vec::new(); l]);
+
+    self.contributions_v = self
+      .contributions_v
+      .iter()
+      .filter(|contrib| contrib.num >= min_contribution)
+      .enumerate()
+      .map(|(i, contrib)| {
+        for (item_type, idx) in contrib.idx.iter_with() {
+          contributions[item_type][idx].push(i)
+        }
+        *contrib
+      })
+      .collect();
+    self.contribution_idxs_v = contributions.map(|v| v.into_iter().collect());
+  }
+}
+
+pub trait Lens {
+  #[must_use]
+  fn user_len(&self) -> usize {
+    self.lens().user
+  }
+
+  #[must_use]
+  fn repo_len(&self) -> usize {
+    self.lens().repo
+  }
+
+  #[must_use]
+  fn lens(&self) -> UserRepoPair<usize>;
+}
+
+impl Lens for DatasetInfo {
+  fn lens(&self) -> UserRepoPair<usize> {
+    self.names().as_ref().map(|v| v.len())
+  }
+}
+
+impl Lens for Dataset {
+  fn lens(&self) -> UserRepoPair<usize> {
+    self.contribution_idxs().as_ref().map(|v| v.len())
+  }
+}
+
+impl Lens for UserRepoPair<usize> {
+  fn lens(&self) -> UserRepoPair<usize> {
+    *self
+  }
+}
+
+pub trait DatasetNameID: Send + Sync + Lens {
+  type ID: Copy + fmt::Debug + Serialize + Send + Sync;
+
+  #[must_use]
+  fn get_id(&self, item_type: ItemType, idx: usize) -> Self::ID;
+
+  #[must_use]
+  fn repo_id(&self, idx: usize) -> Self::ID {
+    self.get_id(ItemType::Repo, idx)
+  }
+
+  #[must_use]
+  fn user_id(&self, idx: usize) -> Self::ID {
+    self.get_id(ItemType::User, idx)
+  }
+
+  /// TODO: fix clone
+  #[must_use]
+  fn get_name(&self, item_type: ItemType, idx: usize) -> String;
+
+  #[must_use]
+  fn repo_name(&self, idx: usize) -> String {
+    self.get_name(ItemType::Repo, idx)
+  }
+
+  #[must_use]
+  fn user_login(&self, idx: usize) -> String {
+    self.get_name(ItemType::User, idx)
+  }
+
+  /// *Slowly* find a name (linear search)
+  /// Its faster to iterate for the few we need instead of building a hashmap
+  /// etc.
+  fn find_item(&self, item_type: ItemType, name: &str) -> Option<usize> {
+    (0..self.lens()[item_type]).find(|&i| self.get_name(item_type, i) == name)
+  }
+}
+
+impl DatasetNameID for DatasetInfo {
+  type ID = github_api::ID;
+
+  fn get_id(&self, item_type: ItemType, idx: usize) -> Self::ID {
+    match item_type {
+      ItemType::Repo => self.repos()[idx].get_github_id(),
+      ItemType::User => self.users()[idx].get_github_id(),
+    }
+  }
+
+  fn get_name(&self, item_type: ItemType, idx: usize) -> String {
+    self.names()[item_type][idx].clone()
+  }
+}
+
+impl DatasetNameID for UserRepoPair<usize> {
+  type ID = ();
+
+  fn get_id(&self, _item_type: ItemType, _idx: usize) -> Self::ID {}
+
+  fn get_name(&self, item_type: ItemType, idx: usize) -> String {
+    assert!(idx < self[item_type]);
+    idx.to_string()
+  }
+
+  fn find_item(&self, item_type: ItemType, name: &str) -> Option<usize> {
+    name
+      .parse()
+      .ok()
+      .and_then(|i| if i < self[item_type] { Some(i) } else { None })
   }
 }
 

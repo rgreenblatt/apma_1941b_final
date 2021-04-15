@@ -1,6 +1,5 @@
 use crate::{
-  dataset::{Contribution, DatasetWithInfo},
-  github_api,
+  dataset::{Contribution, Dataset, DatasetNameID},
   output_data::csv_writer,
   ItemType,
 };
@@ -9,17 +8,17 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 
 #[derive(Deserialize, Serialize)]
-struct ContributionCsvEntry {
+struct ContributionCsvEntry<ID> {
   num: usize,
   count: usize,
-  example_user: github_api::ID,
-  example_repo: github_api::ID,
+  example_user: ID,
+  example_repo: ID,
 }
 
 fn save_contribution_dist_impl<'a>(
   csv_path: &'a Path,
   contributions: impl IntoIterator<Item = &'a Contribution>,
-  dataset_info: &DatasetWithInfo,
+  dataset_info: &impl DatasetNameID,
 ) -> Result<()> {
   let mut contrib_count = HashMap::new();
   for &Contribution { num, idx } in contributions {
@@ -28,8 +27,8 @@ fn save_contribution_dist_impl<'a>(
       .or_insert_with(|| {
         (
           0,
-          dataset_info.user_github_id(idx.user),
-          dataset_info.repo_github_id(idx.repo),
+          dataset_info.user_id(idx.user),
+          dataset_info.repo_id(idx.repo),
         )
       })
       .0 += 1;
@@ -54,22 +53,19 @@ fn save_contribution_dist_impl<'a>(
 
 pub fn save_contribution_dist(
   csv_path: &Path,
-  dataset_info: &DatasetWithInfo,
+  dataset: &Dataset,
+  dataset_info: &impl DatasetNameID,
 ) -> Result<()> {
-  save_contribution_dist_impl(
-    csv_path,
-    dataset_info.dataset().contributions(),
-    dataset_info,
-  )
+  save_contribution_dist_impl(csv_path, dataset.contributions(), dataset_info)
 }
 
 pub fn save_contribution_dist_item(
   csv_path: &Path,
   item_type: ItemType,
   idx: usize,
-  dataset_info: &DatasetWithInfo,
+  dataset: &Dataset,
+  dataset_info: &impl DatasetNameID,
 ) -> Result<()> {
-  let dataset = dataset_info.dataset();
   save_contribution_dist_impl(
     csv_path,
     dataset.contribution_idxs()[item_type][idx]

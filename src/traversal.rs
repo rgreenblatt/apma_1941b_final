@@ -1,6 +1,8 @@
 use crate::{
-  connection_strength::ConnectionStrength, dataset::Dataset,
-  projected_graph::ProjectedGraph, ItemType, UserRepoPair,
+  connection_strength::ConnectionStrength,
+  dataset::{Dataset, Lens},
+  projected_graph::ProjectedGraph,
+  ItemType, UserRepoPair,
 };
 use std::{hash::Hash, iter};
 

@@ -3,9 +3,8 @@ use crate::{
     bin_float, bin_float_place, ConnectionStrength, ConnectionStrengthValue,
     ExpectationAccelerator,
   },
-  dataset::DatasetWithInfo,
+  dataset::{Dataset, DatasetNameID},
   degree_dist_csv::save_sort_items,
-  github_api,
   projected_graph::transitive_edge_compute,
   ItemType,
 };
@@ -16,38 +15,38 @@ use serde::{Deserialize, Serialize};
 use std::{path::Path, sync::Mutex};
 
 #[derive(Deserialize, Serialize)]
-pub struct DegreeCsvEntry {
+pub struct DegreeCsvEntry<ID> {
   pub degree: usize,
   pub count: usize,
-  pub example_github_id: github_api::ID,
+  pub example_github_id: ID,
 }
 
 #[derive(Serialize)]
-pub struct ConnectionStrengthCsvEntry<S: Serialize> {
+pub struct ConnectionStrengthCsvEntry<S: Serialize, ID> {
   pub strength: S,
   pub count: usize,
-  pub example_github_id_first: github_api::ID,
-  pub example_github_id_second: github_api::ID,
+  pub example_github_id_first: ID,
+  pub example_github_id_second: ID,
 }
 
 #[derive(Serialize)]
-pub struct ConnectionStrengthExpectedCsvEntry {
+pub struct ConnectionStrengthExpectedCsvEntry<ID> {
   pub strength: f64,
   pub expected: f64,
   pub count: usize,
-  pub example_github_id_first: github_api::ID,
-  pub example_github_id_second: github_api::ID,
+  pub example_github_id_first: ID,
+  pub example_github_id_second: ID,
 }
 
-type CountExamples1 = (usize, github_api::ID);
-type CountExamples2 = (usize, github_api::ID, github_api::ID);
+type CountExamples1<ID> = (usize, ID);
+type CountExamples2<ID> = (usize, ID, ID);
 
-struct State<T: ConnectionStrength> {
-  degree_counts: Map<usize, CountExamples1>,
-  strength_counts: Map<T::Value, CountExamples2>,
-  strength_normalized_counts: Map<NotNan<f64>, CountExamples2>,
-  expected_counts: Map<NotNan<f64>, CountExamples2>,
-  strength_expected_counts: Map<(NotNan<f64>, NotNan<f64>), CountExamples2>,
+struct State<T: ConnectionStrength, ID> {
+  degree_counts: Map<usize, CountExamples1<ID>>,
+  strength_counts: Map<T::Value, CountExamples2<ID>>,
+  strength_normalized_counts: Map<NotNan<f64>, CountExamples2<ID>>,
+  expected_counts: Map<NotNan<f64>, CountExamples2<ID>>,
+  strength_expected_counts: Map<(NotNan<f64>, NotNan<f64>), CountExamples2<ID>>,
   total_expected: f64,
   total_strength: f64,
   total_sqr_strength: f64,
@@ -58,17 +57,20 @@ struct State<T: ConnectionStrength> {
   count: usize,
 }
 
-pub fn save_connection_str_stats<
-  T: ConnectionStrength,
-  V: ConnectionStrength,
->(
+pub fn save_connection_str_stats<T, V, D>(
   output_dir: &Path,
   item_type: ItemType,
   connection_strength: &T,
   accelerator: &ExpectationAccelerator<V>,
-  dataset_info: &DatasetWithInfo,
-) -> Result<()> {
-  let state = State::<T> {
+  dataset: &Dataset,
+  dataset_info: &D,
+) -> Result<()>
+where
+  T: ConnectionStrength,
+  V: ConnectionStrength,
+  D: DatasetNameID,
+{
+  let state = State::<T, D::ID> {
     degree_counts: Default::default(),
     strength_counts: Default::default(),
     strength_normalized_counts: Default::default(),
@@ -84,7 +86,6 @@ pub fn save_connection_str_stats<
     count: Default::default(),
   };
   let state = Mutex::new(state);
-  let dataset = dataset_info.dataset();
 
   let f = |start_idx: usize, mut edge_map: Map<_, Vec<[usize; 2]>>| {
     let values: Vec<_> = edge_map
@@ -103,8 +104,7 @@ pub fn save_connection_str_stats<
 
     let mut state = state.lock().unwrap();
 
-    let example_github_id_first =
-      dataset_info.get_github_id(item_type, start_idx);
+    let example_github_id_first = dataset_info.get_id(item_type, start_idx);
     state
       .degree_counts
       .entry(values.len())
@@ -112,8 +112,7 @@ pub fn save_connection_str_stats<
       .0 += values.len();
     state.count += values.len();
     for (strength, expected, end_idx) in values {
-      let example_github_id_second =
-        dataset_info.get_github_id(item_type, end_idx);
+      let example_github_id_second = dataset_info.get_id(item_type, end_idx);
 
       let start_triple = (0, example_github_id_first, example_github_id_second);
 

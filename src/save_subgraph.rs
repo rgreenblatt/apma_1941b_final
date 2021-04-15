@@ -1,6 +1,6 @@
 use crate::{
   connection_strength::ConnectionStrength,
-  dataset::DatasetWithInfo,
+  dataset::DatasetNameID,
   item_name_to_save_name,
   progress_bar::get_bar,
   projected_graph::ProjectedGraph,
@@ -17,9 +17,9 @@ pub fn save_subgraph<T: ConnectionStrength>(
   limit: usize,
   projected_graph: &ProjectedGraph<T>,
   item_type: ItemType,
-  dataset_info: &DatasetWithInfo,
+  dataset_info: &impl DatasetNameID,
 ) -> Result<()> {
-  let mut visited = vec![false; dataset_info.dataset().lens()[item_type]];
+  let mut visited = vec![false; dataset_info.lens()[item_type]];
   visited[start] = true;
   let mut component = projected_make_component_dists(start);
 
@@ -33,8 +33,9 @@ pub fn save_subgraph<T: ConnectionStrength>(
     |_, _| bar.inc(1),
   );
 
-  let name = &dataset_info.names()[item_type][start];
-  let save_name = format!("sub_graph_for_{}.dot", item_name_to_save_name(name));
+  let name = dataset_info.get_name(item_type, start);
+  let save_name =
+    format!("sub_graph_for_{}.dot", item_name_to_save_name(&name));
 
   let path = output_dir.join(save_name);
   let file = File::create(path)?;
@@ -53,7 +54,8 @@ pub fn save_subgraph<T: ConnectionStrength>(
     use_point: map.len() > 200,
     map,
     projected_graph,
-    names: &dataset_info.names()[item_type],
+    item_type,
+    dataset_info,
   };
 
   dot::render(&graph, &mut writer)?;
@@ -64,14 +66,17 @@ pub fn save_subgraph<T: ConnectionStrength>(
 type Node = usize;
 type Edge = [usize; 2];
 
-struct Graph<'a, T: ConnectionStrength> {
+struct Graph<'a, T: ConnectionStrength, D: DatasetNameID> {
   map: Map<usize, usize>,
   projected_graph: &'a ProjectedGraph<T>,
-  names: &'a [String],
+  item_type: ItemType,
+  dataset_info: &'a D,
   use_point: bool,
 }
 
-impl<'a, T: ConnectionStrength> dot::Labeller<'a, Node, Edge> for Graph<'a, T> {
+impl<'a, T: ConnectionStrength, D: DatasetNameID> dot::Labeller<'a, Node, Edge>
+  for Graph<'a, T, D>
+{
   fn graph_id(&'a self) -> dot::Id<'a> {
     dot::Id::new("G").unwrap()
   }
@@ -81,7 +86,9 @@ impl<'a, T: ConnectionStrength> dot::Labeller<'a, Node, Edge> for Graph<'a, T> {
   }
 
   fn node_label(&'a self, n: &Node) -> dot::LabelText<'a> {
-    dot::LabelText::LabelStr(Cow::Borrowed(&self.names[*n]))
+    dot::LabelText::LabelStr(Cow::Owned(
+      self.dataset_info.get_name(self.item_type, *n),
+    ))
   }
 
   fn node_shape(&'a self, _node: &Node) -> Option<dot::LabelText<'a>> {
@@ -104,8 +111,8 @@ impl<'a, T: ConnectionStrength> dot::Labeller<'a, Node, Edge> for Graph<'a, T> {
   }
 }
 
-impl<'a, T: ConnectionStrength> dot::GraphWalk<'a, Node, Edge>
-  for Graph<'a, T>
+impl<'a, T: ConnectionStrength, D: DatasetNameID> dot::GraphWalk<'a, Node, Edge>
+  for Graph<'a, T, D>
 {
   fn nodes(&self) -> dot::Nodes<'a, Node> {
     let nodes = self.map.keys().cloned().collect();

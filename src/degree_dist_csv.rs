@@ -1,38 +1,43 @@
-use crate::{dataset::DatasetWithInfo, output_data::csv_writer, ItemType};
+use crate::{
+  dataset::{Dataset, DatasetNameID},
+  output_data::csv_writer,
+  ItemType,
+};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
 
 #[derive(Deserialize, Serialize)]
-pub struct DegreeCsvEntry {
+pub struct DegreeCsvEntry<ID> {
   pub degree: usize,
   pub count: usize,
-  pub example_name: String,
+  pub example_id: ID,
 }
 
-pub fn save_degrees(
+pub fn save_degrees<D: DatasetNameID>(
   csv_path: &Path,
   item_type: ItemType,
-  dataset: &DatasetWithInfo,
+  dataset: &Dataset,
+  dataset_info: &D,
   get_degree: impl Fn(&[usize]) -> usize,
 ) -> Result<()> {
   let mut degree_count = HashMap::new();
-  for (v, name) in dataset.dataset().contribution_idxs()[item_type]
-    .iter()
-    .zip(&dataset.names()[item_type])
-  {
-    let degree = get_degree(v);
-    degree_count.entry(degree).or_insert((0, name.clone())).0 += 1;
+  for (i, idxs) in dataset.contribution_idxs()[item_type].iter().enumerate() {
+    let degree = get_degree(idxs);
+    degree_count
+      .entry(degree)
+      .or_insert((0, dataset_info.get_id(item_type, i)))
+      .0 += 1;
   }
 
   save_sort_items(
     csv_path,
     degree_count,
     |(degree, _)| *degree,
-    |(degree, (count, example_name))| DegreeCsvEntry {
+    |(degree, (count, example_id))| DegreeCsvEntry {
       degree,
       count,
-      example_name,
+      example_id,
     },
   )
 }

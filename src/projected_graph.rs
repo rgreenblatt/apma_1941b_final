@@ -1,6 +1,6 @@
 use crate::{
   connection_strength::ConnectionStrength,
-  dataset::{Contribution, Dataset},
+  dataset::{Contribution, Dataset, Lens},
   edge_vec::EdgeVec,
   progress_bar::get_bar,
   ItemType,
