@@ -482,10 +482,7 @@ pub(super) mod test {
 
   pub fn small_disconnected_dataset(count: usize) -> Dataset {
     Dataset::new(
-      UserRepoPair {
-        user: count,
-        repo: count,
-      },
+      UserRepoPair::same(count),
       (0..count).into_iter().map(|i| contrib(i, i)).collect(),
     )
   }
@@ -550,10 +547,7 @@ pub(super) mod test {
 
   pub fn fully_connected_dataset(count: usize) -> Dataset {
     Dataset::new(
-      UserRepoPair {
-        user: count,
-        repo: count,
-      },
+      UserRepoPair::same(count),
       (0..count)
         .into_iter()
         .map(|i| contrib(i, i))
@@ -646,7 +640,7 @@ pub(super) mod test {
       contrib(7, 7),
       contrib(4, 7),
     ];
-    Dataset::new(UserRepoPair { user: 8, repo: 8 }, contributions)
+    Dataset::new(UserRepoPair::same(8), contributions)
   }
 
   #[test]
@@ -710,7 +704,7 @@ pub(super) mod test {
       contrib(7, 7),
       contrib(4, 7),
     ];
-    Dataset::new(UserRepoPair { user: 9, repo: 9 }, contributions)
+    Dataset::new(UserRepoPair::same(9), contributions)
   }
 
   #[test]
