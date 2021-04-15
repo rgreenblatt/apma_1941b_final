@@ -42,17 +42,18 @@ def projected(data_dir, fig_dir):
                 if header_name == 'degrees':
                     plt.plot(degrees, counts)
                 else:
-                    _, bins = np.histogram(np.log10(degrees + 1),
-                                           weights=counts)
+                    if dir_path == "NumCommonNode":
+                        bins = [round(degrees.max()), counts.max()]
+                    else:
+                        _, bins = np.histogram(np.log10(degrees + 1),
+                                               weights=counts)
 
-                    if dir_path != "NumCommonNode":
                         _, bins = np.histogram(np.log10(degrees + 1),
                                                bins=bins.size * 2,
                                                weights=counts)
-                    plt.hist(degrees,
-                             weights=counts,
-                             bins=10**bins,
-                             density=True)
+                        bins = 10**bins
+
+                    plt.hist(degrees, weights=counts, bins=bins, density=True)
                 plt.title(title)
                 plt.xscale('log')
                 if use_y_log:
@@ -114,68 +115,111 @@ def projected(data_dir, fig_dir):
         plt.clf()
 
 
+def walklevel_exact(some_dir, level=1):
+    some_dir = some_dir.rstrip(os.path.sep)
+    assert os.path.isdir(some_dir)
+    num_sep = some_dir.count(os.path.sep)
+    for root, dirs, files in os.walk(some_dir):
+        num_sep_this = root.count(os.path.sep)
+        sub_level = num_sep_this - num_sep
+        if sub_level == level:
+            yield root, dirs, files
+        if sub_level >= level:
+            del dirs[:]
+
+
+def contributions(data_dir, fig_dir):
+    try:
+        csv_files = os.listdir(data_dir)
+    except FileNotFoundError:
+        return
+    for csv_file in csv_files:
+        df = pd.read_csv("{}/{}".format(data_dir, csv_file), sep=',')
+
+        nums = df['num']
+        counts = df['count']
+
+        plt.plot(nums, counts)
+        plt.title("contributions dist")
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.savefig("{}/{}.png".format(fig_dir, os.path.splitext(csv_file)[0]))
+        plt.clf()
+
+
+def make_figs(data_dir, fig_dir):
+    os.makedirs(fig_dir, exist_ok=True)
+
+    if os.path.basename(fig_dir) == "contributions":
+        contributions(data_dir, fig_dir)
+        return
+
+    for projected_dir in ["projected_repo", "projected_user"]:
+        print(projected_dir)
+        projected_data_dir = "{}/{}".format(data_dir, projected_dir)
+        projected_fig_dir = "{}/{}".format(fig_dir, projected_dir)
+        projected(projected_data_dir, projected_fig_dir)
+
+    for name, title in [
+        ("user_degrees", "user degrees"),
+        ("repo_degrees", "repo degrees"),
+        ("user_total_contributions", "user total contributions"),
+        ("repo_total_events", "repo total events"),
+    ]:
+
+        try:
+            df = pd.read_csv("{}/{}.csv".format(data_dir, name), sep=',')
+        except FileNotFoundError:
+            continue
+        degrees = df['degree']
+        counts = df['count']
+
+        plt.plot(degrees, counts)
+        plt.title(title)
+        plt.xscale('log')
+        plt.yscale('log')
+        plt.savefig("{}/{}.png".format(fig_dir, name))
+        plt.clf()
+
+    try:
+        df = pd.read_csv("{}/{}.csv".format(data_dir, "component_sizes"),
+                         sep=',')
+    except FileNotFoundError:
+        return
+
+    users, repos, counts = df['user_size'], df['repo_size'], df['count']
+
+    loc = counts > 2
+    users, repos, counts = users[loc], repos[loc], counts[loc]
+
+    plt.hist2d(users,
+               repos,
+               weights=counts,
+               bins=[users.max(), repos.max()],
+               norm=matplotlib.colors.LogNorm())
+    plt.title("component sizes")
+    plt.xlabel("users")
+    plt.ylabel("repos")
+    plt.savefig("{}/{}.png".format(fig_dir, "component_sizes"))
+    plt.clf()
+
+
 def main():
-    parser = argparse.ArgumentParser(
-        description='plot a histogram of the component sizes')
+    parser = argparse.ArgumentParser(description='generate all figures')
     parser.add_argument('--fig-dir', default=FIG_DIR)
     parser.add_argument('--data-dir', default=OUTPUT_DATA_DIR)
     args = parser.parse_args()
 
-    _, directories, _ = next(os.walk(args.data_dir))
-    for dir_path in directories:
-        print(dir_path)
-        fig_dir = "{}/{}".format(args.fig_dir, dir_path)
-        data_dir = "{}/{}".format(args.data_dir, dir_path)
-        os.makedirs(fig_dir, exist_ok=True)
-
-        for projected_dir in ["projected_repo", "projected_user"]:
-            print(projected_dir)
-            projected_data_dir = "{}/{}".format(data_dir, projected_dir)
-            projected_fig_dir = "{}/{}".format(fig_dir, projected_dir)
-            projected(projected_data_dir, projected_fig_dir)
-
-        for name, title in [
-            ("user_degrees", "user degrees"),
-            ("repo_degrees", "repo degrees"),
-            ("user_total_contributions", "user total contributions"),
-            ("repo_total_events", "repo total events"),
-        ]:
-
-            try:
-                df = pd.read_csv("{}/{}.csv".format(data_dir, name), sep=',')
-            except FileNotFoundError:
-                continue
-            degrees = df['degree']
-            counts = df['count']
-
-            plt.plot(degrees, counts)
-            plt.title(title)
-            plt.xscale('log')
-            plt.yscale('log')
-            plt.savefig("{}/{}.png".format(fig_dir, name))
-            plt.clf()
-
-        try:
-            df = pd.read_csv("{}/{}.csv".format(data_dir, "component_sizes"),
-                             sep=',')
-        except FileNotFoundError:
-            continue
-
-        users, repos, counts = df['user_size'], df['repo_size'], df['count']
-
-        loc = counts > 2
-        users, repos, counts = users[loc], repos[loc], counts[loc]
-
-        plt.hist2d(users,
-                   repos,
-                   weights=counts,
-                   bins=[users.max(), repos.max()],
-                   norm=matplotlib.colors.LogNorm())
-        plt.title("component sizes")
-        plt.xlabel("users")
-        plt.ylabel("repos")
-        plt.savefig("{}/{}.png".format(fig_dir, "component_sizes"))
-        plt.clf()
+    top_data_dir = args.data_dir.rstrip(os.path.sep) + os.path.sep
+    for data_root, directories, _ in walklevel_exact(top_data_dir, 1):
+        assert data_root[:len(top_data_dir)] == top_data_dir
+        fig_root = args.fig_dir + data_root[len(top_data_dir):]
+        for dir_path in directories:
+            data_dir = os.path.join(data_root, dir_path)
+            fig_dir = os.path.join(fig_root, dir_path)
+            print("for", data_dir)
+            make_figs(data_dir, fig_dir)
+            print()
 
 
 if __name__ == "__main__":

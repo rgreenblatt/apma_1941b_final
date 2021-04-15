@@ -35,7 +35,7 @@ where
 }
 
 #[must_use]
-pub fn gen_graph(dataset: &Dataset) -> Dataset {
+pub fn gen_graph<R: Rng + ?Sized>(dataset: &Dataset, rng: &mut R) -> Dataset {
   let mut counts = Map::default();
 
   let mut degrees: UserRepoPair<Vec<DegreeItem>> =
@@ -88,9 +88,7 @@ pub fn gen_graph(dataset: &Dataset) -> Dataset {
     bins.last()
   );
 
-  let mut rng = StdRng::seed_from_u64(812388383);
-
-  degrees.repo.shuffle(&mut rng);
+  degrees.repo.shuffle(rng);
 
   let mut binned_degrees = vec![UserRepoPair::<Vec<_>>::default(); bins.len()];
 
@@ -117,7 +115,7 @@ pub fn gen_graph(dataset: &Dataset) -> Dataset {
       }
 
       let num = Uniform::from(repo.num.min(user.num)..=repo.num.max(user.num))
-        .sample(&mut rng);
+        .sample(rng);
       contributions.push(Contribution {
         num,
         idx: UserRepoPair {

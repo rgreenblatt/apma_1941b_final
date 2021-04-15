@@ -10,13 +10,13 @@ use github_net::{
   dataset::{Dataset, DatasetInfo, DatasetNameID, Lens},
   degree_dist_csv::save_degrees,
   distances::{average_distance, compute_pseudo_diameter},
-  item_name_to_save_name,
-  null_random_graph_model::gen_graph,
+  item_name_to_save_name, null_random_graph_model,
   projected_graph::ProjectedGraph,
   save_subgraph::save_subgraph,
   traversal::Node,
   ItemType, UserRepoPair,
 };
+use rand::prelude::*;
 use std::{
   fs,
   path::{Path, PathBuf},
@@ -34,15 +34,15 @@ struct Opt {
   limit: Option<usize>,
 
   /// Don't run analysis on the original network.
-  #[structopt(short, long)]
+  #[structopt(long)]
   no_original_network: bool,
 
   /// Also run analysis on the configuration model with the same degrees.
-  #[structopt(short, long)]
+  #[structopt(long)]
   use_configuration_model: bool,
 
   /// Run analysis on a null random grpah model.
-  #[structopt(short, long)]
+  #[structopt(long)]
   null_random_graph_model: bool,
 
   /// Eliminate users with very large contribution to remove (some) bots and
@@ -329,12 +329,14 @@ fn run(
     repo: repo_min_connection_str.clone(),
   };
 
-  fs::create_dir_all(&output_dir)?;
+  let contributions_dir = output_dir.join("contributions");
+
+  fs::create_dir_all(&contributions_dir)?;
 
   if *contribution {
     println!("running contribution");
     save_contribution_dist(
-      &output_dir.join("contributions_dist.csv"),
+      &contributions_dir.join("overall.csv"),
       &dataset,
       dataset_info,
     )?;
@@ -345,8 +347,8 @@ fn run(
       println!("running contribution dist for {} {}", item_name, name);
       let idx = dataset_info.find_item(item_type, &name).unwrap();
       save_contribution_dist_item(
-        &output_dir.join(format!(
-          "{}_{}_contributions_dist.csv",
+        &contributions_dir.join(format!(
+          "{}_{}.csv",
           item_name,
           item_name_to_save_name(&name)
         )),
@@ -467,6 +469,8 @@ fn run(
 pub fn main() -> Result<()> {
   let opt = Opt::from_args();
 
+  let output_dir = PathBuf::from("output_data");
+
   if opt.use_configuration_model || !opt.no_original_network {
     let (dataset_info, dataset) =
       DatasetInfo::load_limited(opt.limit, Some(opt.max_user_contributions))?;
@@ -477,11 +481,14 @@ pub fn main() -> Result<()> {
 
     if opt.use_configuration_model {
       println!("=== running for configuration model ===\n");
+
+      let mut rng = StdRng::seed_from_u64(812388383);
+
       run(
         &opt,
-        &mut configuration_model::gen_graph(&dataset),
+        &mut configuration_model::gen_graph(&dataset, &mut rng),
         &dataset_info,
-        &PathBuf::from("configuration_model_output_data/"),
+        &output_dir.join("configuration_model"),
       )?;
     }
     if !opt.no_original_network {
@@ -491,18 +498,23 @@ pub fn main() -> Result<()> {
         &opt,
         &mut dataset,
         &dataset_info,
-        &PathBuf::from("configuration_model_output_data/"),
+        &output_dir.join("actual_graph"),
       )?;
     }
   }
   if opt.null_random_graph_model {
-    unimplemented!()
-    // run(
-    //   &opt,
-    //   ,
-    //   &dataset_info,
-    //   &PathBuf::from("configuration_model_output_data/"),
-    // )?;
+    println!("=== running for null random graph model ===\n");
+
+    let mut rng = StdRng::seed_from_u64(2838348);
+    let mut dataset =
+      null_random_graph_model::gen_graph(10, 10, 0.001, 0.4, &mut rng, |_| 100);
+    let info = dataset.lens();
+    run(
+      &opt,
+      &mut dataset,
+      &info,
+      &output_dir.join("null_random_graph_model"),
+    )?;
   }
 
   Ok(())
