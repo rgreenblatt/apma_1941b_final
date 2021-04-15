@@ -108,10 +108,12 @@ fn run_degrees(
   output_dir: &Path,
   dataset_info: &DatasetWithInfo,
 ) -> Result<()> {
-  for &(item_type, name) in &[
-    (ItemType::User, "user_degrees.csv"),
-    (ItemType::Repo, "repo_degrees.csv"),
-  ] {
+  let deg_names = UserRepoPair {
+    user: "user_degrees.csv",
+    repo: "repo_degrees.csv",
+  };
+
+  for (item_type, name) in deg_names.iter_with() {
     save_degrees(
       &output_dir.join(name),
       item_type,
@@ -120,10 +122,12 @@ fn run_degrees(
     )?
   }
 
-  for &(item_type, name) in &[
-    (ItemType::User, "user_total_contributions.csv"),
-    (ItemType::Repo, "repo_total_events.csv"),
-  ] {
+  let total_names = UserRepoPair {
+    user: "user_total_contributions.csv",
+    repo: "repo_total_events.csv",
+  };
+
+  for (item_type, name) in total_names.iter_with() {
     save_degrees(
       &output_dir.join(name),
       item_type,
@@ -186,9 +190,12 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
     connection_str_stats,
   } = args;
 
-  for &(item_type, prefix) in
-    &[(ItemType::User, "user"), (ItemType::Repo, "repo")]
-  {
+  let prefixs = UserRepoPair {
+    user: "user",
+    repo: "repo",
+  };
+
+  for (item_type, prefix) in prefixs.iter_with() {
     let output_dir: PathBuf = output_dir
       .join(&format!("projected_{}", prefix))
       .join(format!("{:?}", connection_strength));
@@ -329,7 +336,7 @@ pub fn main() -> Result<()> {
     )?;
   }
 
-  for (item_type, (names, item_name)) in contribution_names.iter_with_types() {
+  for (item_type, (names, item_name)) in contribution_names.iter_with() {
     for name in names {
       println!("running contribution dist for {} {}", item_name, name);
       let idx = dataset_info.find_item(item_type, &name).unwrap();

@@ -83,11 +83,11 @@ impl DatasetWithInfo {
   }
 
   pub fn user_logins(&self) -> &[String] {
-    &self.names()[ItemType::User]
+    &self.names().user
   }
 
   pub fn repo_names(&self) -> &[String] {
-    &self.names()[ItemType::Repo]
+    &self.names().repo
   }
 
   pub fn repo_github_id(&self, idx: usize) -> github_api::ID {
@@ -390,7 +390,7 @@ impl Dataset {
     let mut contribution_idxs = lens.map(|l| vec![Vec::new(); l]);
 
     for (i, contribution) in contributions_v.iter().enumerate() {
-      for (item_type, idx) in contribution.idx.iter_with_types() {
+      for (item_type, idx) in contribution.idx.iter_with() {
         contribution_idxs[item_type][idx].push(i)
       }
     }
@@ -429,7 +429,7 @@ impl Dataset {
       .filter(|contrib| contrib.num >= min_contribution)
       .enumerate()
       .map(|(i, contrib)| {
-        for (item_type, idx) in contrib.idx.iter_with_types() {
+        for (item_type, idx) in contrib.idx.iter_with() {
           contributions[item_type][idx].push(i)
         }
         *contrib
@@ -459,7 +459,7 @@ impl Dataset {
     contributions_v: Vec<Contribution>,
     contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
   ) {
-    for (item_type, idxs) in contribution_idxs_v.as_ref().iter_with_types() {
+    for (item_type, idxs) in contribution_idxs_v.as_ref().iter_with() {
       assert_eq!(idxs.len(), self.lens()[item_type]);
     }
 

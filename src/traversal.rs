@@ -126,7 +126,7 @@ fn traverse_gen(
   // all items are visited
   assert!(component
     .as_ref()
-    .iter_with_types()
+    .iter_with()
     .flat_map(|(item_type, idxs)| idxs
       .idxs()
       .iter()
@@ -199,7 +199,7 @@ fn traversal_step(
   callback: &mut impl FnMut(Node, usize),
 ) {
   let start = &mut start[item_type];
-  let (idxs, other_idxs) = component.as_mut().as_tup_with_first(item_type);
+  let [idxs, other_idxs] = component.as_mut().as_arr_with_first(item_type);
   for &idx in &idxs.idxs()[*start..] {
     let new_idxs = dataset.contribution_idxs()[item_type][idx]
       .iter()
@@ -353,7 +353,7 @@ pub(super) mod test {
     dataset: &Dataset,
     actual: &mut UserRepoPair<impl ComponentSort>,
   ) -> Result<(), TestCaseError> {
-    for (item_type, idxs) in actual.as_ref().iter_with_types() {
+    for (item_type, idxs) in actual.as_ref().iter_with() {
       for &idx in idxs.idxs() {
         for &contrib_idx in dataset.contribution_idxs()[item_type][idx].iter() {
           proptest::prop_assert!(actual[item_type.other()].idxs().contains(

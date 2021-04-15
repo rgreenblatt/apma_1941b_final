@@ -89,14 +89,10 @@ impl<T> UserRepoPair<T> {
     }
   }
 
-  pub fn as_tup(self) -> (T, T) {
-    (self.user, self.repo)
-  }
-
-  pub fn as_tup_with_first(self, item_type: ItemType) -> (T, T) {
+  pub fn as_arr_with_first(self, item_type: ItemType) -> [T; 2] {
     match item_type {
-      ItemType::User => (self.user, self.repo),
-      ItemType::Repo => (self.repo, self.user),
+      ItemType::User => [self.user, self.repo],
+      ItemType::Repo => [self.repo, self.user],
     }
   }
 
@@ -117,7 +113,7 @@ impl<T> UserRepoPair<T> {
     }
   }
 
-  pub fn iter_with_types(self) -> impl Iterator<Item = (ItemType, T)> {
+  pub fn iter_with(self) -> impl Iterator<Item = (ItemType, T)> {
     iter::once((ItemType::User, self.user))
       .chain(iter::once((ItemType::Repo, self.repo)))
   }

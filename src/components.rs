@@ -33,7 +33,7 @@ where
     let start = self
       .not_visited
       .as_mut()
-      .iter_with_types()
+      .iter_with()
       .map(|(item_type, not_visited)| {
         pop(not_visited).map(|idx| Node { idx, item_type })
       })
@@ -120,7 +120,7 @@ mod test {
   ) -> Result<HashSet<Component>, TestCaseError> {
     let actual: HashSet<_> = components(dataset).map(sort_component).collect();
     for component in actual.iter() {
-      for (item_type, idxs) in component.as_ref().iter_with_types() {
+      for (item_type, idxs) in component.as_ref().iter_with() {
         for &idx in idxs {
           for &contrib_idx in dataset.contribution_idxs()[item_type][idx].iter()
           {

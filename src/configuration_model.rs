@@ -94,7 +94,7 @@ pub fn gen_graph(dataset_info: &mut DatasetWithInfo) {
 
   let mut binned_degrees = vec![UserRepoPair::<Vec<_>>::default(); bins.len()];
 
-  for (item_type, v) in degrees.iter_with_types() {
+  for (item_type, v) in degrees.iter_with() {
     for v in v {
       let i = partition_point(&bins, |bin| bin < &v.num);
       assert!(bins[i] >= v.num);
