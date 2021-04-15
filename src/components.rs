@@ -80,7 +80,7 @@ pub fn components_callback<'a>(
   ComponentIterator {
     dataset,
     visited: default_visited(dataset),
-    not_visited: dataset.names().as_ref().map(|v| (0..v.len()).collect()),
+    not_visited: dataset.lens().map(|l| (0..l).collect()),
     empty: false,
     callback,
   }
@@ -93,12 +93,12 @@ pub fn components(dataset: &Dataset) -> impl Iterator<Item = Component> + '_ {
 #[cfg(test)]
 mod test {
   use super::*;
+  use crate::dataset;
   use crate::traversal::test::{
     fully_connected_dataset, single_repo_dataset, single_user_dataset,
     small_disconnected_dataset, two_dense_components_dataset,
     two_dense_components_several_disconnected_dataset,
   };
-  use crate::{dataset, github_api};
   use proptest::prelude::*;
   use std::{collections::HashSet, iter};
 
@@ -254,9 +254,9 @@ mod test {
       #[test]
       fn proptest_components(
         dataset in dataset::strategy(
-          1 as github_api::ID..100,
-          1 as github_api::ID..100,
-          1 as u32..=2,
+          1 as usize..100,
+          1 as usize..100,
+          1 as usize..=2,
           1usize..1000,
         ),
       ) {

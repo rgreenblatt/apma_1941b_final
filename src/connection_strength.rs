@@ -202,7 +202,7 @@ pub trait ConnectionStrength: Clone + Copy + fmt::Debug + Sync + Send {
       .sum()
   }
 
-  fn operation(nums: [u32; 2]) -> Self::Value;
+  fn operation(nums: [usize; 2]) -> Self::Value;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -211,7 +211,7 @@ pub struct NumCommonNodes;
 impl ConnectionStrength for NumCommonNodes {
   type Value = usize;
 
-  fn operation(_nums: [u32; 2]) -> Self::Value {
+  fn operation(_nums: [usize; 2]) -> Self::Value {
     1
   }
 }
@@ -222,7 +222,7 @@ pub struct MinNumEvents;
 impl ConnectionStrength for MinNumEvents {
   type Value = usize;
 
-  fn operation(nums: [u32; 2]) -> Self::Value {
+  fn operation(nums: [usize; 2]) -> Self::Value {
     *nums.iter().min().unwrap() as usize
   }
 }
@@ -233,8 +233,8 @@ pub struct TotalNumEvents;
 impl ConnectionStrength for TotalNumEvents {
   type Value = usize;
 
-  fn operation(nums: [u32; 2]) -> Self::Value {
-    nums.iter().sum::<u32>() as usize
+  fn operation(nums: [usize; 2]) -> Self::Value {
+    nums.iter().sum::<usize>() as usize
   }
 }
 
@@ -244,7 +244,7 @@ pub struct GeometricMeanEvents;
 impl ConnectionStrength for GeometricMeanEvents {
   type Value = NotNan<f64>;
 
-  fn operation(nums: [u32; 2]) -> Self::Value {
+  fn operation(nums: [usize; 2]) -> Self::Value {
     NotNan::new(nums.iter().map(|&n| n as f64).product::<f64>().sqrt()).unwrap()
   }
 }
@@ -293,7 +293,7 @@ impl<'a, T: ConnectionStrength> ConnectionStrength for Normalized<'a, T> {
     NotNan::new(strength.to_float() / expected).unwrap()
   }
 
-  fn operation(_nums: [u32; 2]) -> Self::Value {
+  fn operation(_nums: [usize; 2]) -> Self::Value {
     unreachable!();
   }
 }
@@ -337,7 +337,7 @@ impl FromStr for ConnectionStrengthTypes {
 #[test]
 pub fn basic_expectation() {
   use super::*;
-  use crate::traversal::test::{contrib_num, repos, users};
+  use crate::traversal::test::contrib_num;
 
   let large_repo: Vec<_> = (0..10).map(|i| contrib_num(i, 0, 10 + i)).collect();
   let other_large_repo: Vec<_> =
@@ -351,13 +351,12 @@ pub fn basic_expectation() {
   ];
 
   let dataset = Dataset::new(
-    users(11),
-    repos(4),
+    UserRepoPair { user: 12, repo: 4 },
     large_repo
       .into_iter()
       .chain(other_large_repo)
-      .chain(contributions),
-    false,
+      .chain(contributions)
+      .collect(),
   );
 
   let accel =

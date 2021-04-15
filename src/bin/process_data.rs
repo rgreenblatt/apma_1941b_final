@@ -7,7 +7,7 @@ use github_net::{
   contribution_dist_csv::{
     save_contribution_dist, save_contribution_dist_item,
   },
-  dataset::Dataset,
+  dataset::DatasetWithInfo,
   degree_dist_csv::save_degrees,
   distances::{average_distance, compute_pseudo_diameter},
   item_name_to_save_name,
@@ -101,10 +101,13 @@ struct Opt {
   connection_str_stats: bool,
 
   #[structopt(long, default_value = "0", use_delimiter = true)]
-  min_contribution: Vec<u32>,
+  min_contribution: Vec<usize>,
 }
 
-fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
+fn run_degrees(
+  output_dir: &Path,
+  dataset_info: &DatasetWithInfo,
+) -> Result<()> {
   for &(item_type, name) in &[
     (ItemType::User, "user_degrees.csv"),
     (ItemType::Repo, "repo_degrees.csv"),
@@ -112,7 +115,7 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
     save_degrees(
       &output_dir.join(name),
       item_type,
-      dataset,
+      dataset_info,
       |items: &[_]| items.len(),
     )?
   }
@@ -124,11 +127,11 @@ fn run_degrees(output_dir: &Path, dataset: &Dataset) -> Result<()> {
     save_degrees(
       &output_dir.join(name),
       item_type,
-      dataset,
+      dataset_info,
       |items: &[usize]| -> usize {
         items
           .iter()
-          .map(|&i| dataset.contributions()[i].num as usize)
+          .map(|&i| dataset_info.dataset().contributions()[i].num as usize)
           .sum()
       },
     )?
@@ -142,7 +145,7 @@ struct RunConnectionStrArgs<'a> {
   min_connection_str: &'a mut UserRepoPair<Vec<f64>>,
   subgraph_names: &'a UserRepoPair<Vec<String>>,
   subgraph_limit: usize,
-  dataset: &'a Dataset,
+  dataset_info: &'a DatasetWithInfo,
   connection_str_stats: bool,
 }
 
@@ -153,7 +156,7 @@ fn run_connection_outer<'a, T: ConnectionStrength>(
 ) -> Result<()> {
   let ref accelerators =
     UserRepoPair::<()>::default().map_with(|_, item_type| {
-      ExpectationAccelerator::new(item_type, args.dataset)
+      ExpectationAccelerator::new(item_type, args.dataset_info.dataset())
     });
   if norm {
     run_connection_str(
@@ -179,7 +182,7 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
     min_connection_str,
     subgraph_names,
     subgraph_limit,
-    dataset,
+    dataset_info,
     connection_str_stats,
   } = args;
 
@@ -203,7 +206,7 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
         item_type,
         &connection_strength,
         &accelerators[item_type],
-        &dataset,
+        &dataset_info,
       )?;
     }
 
@@ -222,18 +225,20 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
       continue;
     };
 
+    let dataset = dataset_info.dataset();
+
     let mut projected_graph = ProjectedGraph::from_dataset(
       item_type,
       &connection_strength,
       lowest,
-      &dataset,
+      dataset,
     );
 
     for ref min_connection_str in min_connection_str {
       println!("running for min connection strength {}", min_connection_str);
 
       projected_graph = projected_graph
-        .filter_edges(dataset.len(item_type), min_connection_str);
+        .filter_edges(dataset.lens()[item_type], min_connection_str);
 
       let output_dir: PathBuf =
         output_dir.join(format!("min_connection_str_{}", &min_connection_str));
@@ -241,7 +246,7 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
       fs::create_dir_all(&output_dir)?;
 
       for name in &subgraph_names[item_type] {
-        let idx = dataset.find_item(item_type, name).unwrap();
+        let idx = dataset_info.find_item(item_type, name).unwrap();
 
         println!("saving subgraph for {:?} {}", item_type, name);
 
@@ -251,7 +256,7 @@ fn run_connection_str<'a, T: ConnectionStrength, V: ConnectionStrength>(
           subgraph_limit,
           &projected_graph,
           item_type,
-          &dataset,
+          &dataset_info,
         )?;
       }
     }
@@ -297,14 +302,17 @@ pub fn main() -> Result<()> {
     repo: projected_repo_min_connection_str,
   };
 
-  let mut dataset = Dataset::load_limited(limit, Some(max_user_contributions))?;
+  let mut dataset_info =
+    DatasetWithInfo::load_limited(limit, Some(max_user_contributions))?;
 
-  println!("users: {}", dataset.len(ItemType::User));
-  println!("repos: {}", dataset.len(ItemType::Repo));
+  let dataset = dataset_info.dataset();
+
+  println!("users: {}", dataset.lens().user);
+  println!("repos: {}", dataset.lens().repo);
   println!("connections: {}", dataset.contributions().len());
 
   let output_dir: PathBuf = if use_configuration_model {
-    configuration_model::gen_graph(&mut dataset);
+    configuration_model::gen_graph(&mut dataset_info);
 
     "configuration_model_output_data/".into()
   } else {
@@ -317,14 +325,14 @@ pub fn main() -> Result<()> {
     println!("running contribution");
     save_contribution_dist(
       &output_dir.join("contributions_dist.csv"),
-      &dataset,
+      &dataset_info,
     )?;
   }
 
   for (item_type, (names, item_name)) in contribution_names.iter_with_types() {
     for name in names {
       println!("running contribution dist for {} {}", item_name, name);
-      let idx = dataset.find_item(item_type, &name).unwrap();
+      let idx = dataset_info.find_item(item_type, &name).unwrap();
       save_contribution_dist_item(
         &output_dir.join(format!(
           "{}_{}_contributions_dist.csv",
@@ -333,7 +341,7 @@ pub fn main() -> Result<()> {
         )),
         item_type,
         idx,
-        &dataset,
+        &dataset_info,
       )?;
     }
   }
@@ -342,7 +350,9 @@ pub fn main() -> Result<()> {
 
   for min_contribution in min_contribution {
     println!("running for min contributions {}", min_contribution);
-    dataset.filter_contributions(min_contribution);
+    dataset_info.filter_contributions(min_contribution);
+
+    let dataset = dataset_info.dataset();
 
     let output_dir =
       output_dir.join(format!("min_contribution_{}", min_contribution));
@@ -351,7 +361,7 @@ pub fn main() -> Result<()> {
 
     if degrees {
       println!("running degrees");
-      run_degrees(&output_dir, &dataset)?
+      run_degrees(&output_dir, &dataset_info)?
     }
 
     if components {
@@ -362,8 +372,8 @@ pub fn main() -> Result<()> {
       )?;
 
       if let Some(giant_component) = giant_component {
-        let giant_n_repos = giant_component[ItemType::Repo].len();
-        let total_n_repos = dataset.len(ItemType::Repo);
+        let giant_n_repos = giant_component.repo.len();
+        let total_n_repos = dataset.lens().repo;
         if giant_n_repos < total_n_repos / 4 {
           println!(
             "WARN! giant component is quite small ({} / {} repos)",
@@ -417,7 +427,7 @@ pub fn main() -> Result<()> {
         subgraph_limit,
         subgraph_names: &subgraph_names,
         connection_str_stats,
-        dataset: &dataset,
+        dataset_info: &dataset_info,
       };
 
       type CST = ConnectionStrengthTypes;

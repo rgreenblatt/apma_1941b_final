@@ -3,7 +3,7 @@ use crate::{
     bin_float, bin_float_place, ConnectionStrength, ConnectionStrengthValue,
     ExpectationAccelerator,
   },
-  dataset::Dataset,
+  dataset::DatasetWithInfo,
   degree_dist_csv::save_sort_items,
   github_api,
   projected_graph::transitive_edge_compute,
@@ -65,7 +65,7 @@ pub fn save_connection_str_stats<
   item_type: ItemType,
   connection_strength: &T,
   accelerator: &ExpectationAccelerator<V>,
-  dataset: &Dataset,
+  dataset_info: &DatasetWithInfo,
 ) -> Result<()> {
   let state = State::<T> {
     degree_counts: Default::default(),
@@ -83,6 +83,7 @@ pub fn save_connection_str_stats<
     count: Default::default(),
   };
   let state = Mutex::new(state);
+  let dataset = dataset_info.dataset();
 
   let f = |start_idx: usize, mut edge_map: Map<_, Vec<[usize; 2]>>| {
     let values: Vec<_> = edge_map
@@ -101,7 +102,7 @@ pub fn save_connection_str_stats<
 
     let mut state = state.lock().unwrap();
 
-    let example_github_id_first = dataset.get_github_id(item_type, start_idx);
+    let example_github_id_first = dataset_info.get_github_id(item_type, start_idx);
     state
       .degree_counts
       .entry(values.len())
@@ -109,7 +110,7 @@ pub fn save_connection_str_stats<
       .0 += values.len();
     state.count += values.len();
     for (strength, expected, end_idx) in values {
-      let example_github_id_second = dataset.get_github_id(item_type, end_idx);
+      let example_github_id_second = dataset_info.get_github_id(item_type, end_idx);
 
       let start_triple = (0, example_github_id_first, example_github_id_second);
 

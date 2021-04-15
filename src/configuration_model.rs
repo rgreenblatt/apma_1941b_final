@@ -1,5 +1,5 @@
 use crate::{
-  dataset::{Contribution, Dataset},
+  dataset::{Contribution, DatasetWithInfo},
   UserRepoPair,
 };
 use fnv::{FnvHashMap as Map, FnvHashSet as Set};
@@ -10,7 +10,7 @@ use rand::prelude::*;
 struct DegreeItem {
   i: usize,
   j: usize,
-  num: u32,
+  num: usize,
 }
 
 fn partition_point<T, P>(slice: &[T], mut pred: P) -> usize
@@ -33,8 +33,10 @@ where
   left
 }
 
-pub fn gen_graph(dataset: &mut Dataset) {
+/// TODO: fix this being with info etc...
+pub fn gen_graph(dataset_info: &mut DatasetWithInfo) {
   let mut counts = Map::default();
+  let dataset = dataset_info.dataset();
 
   let mut degrees: UserRepoPair<Vec<DegreeItem>> =
     UserRepoPair::<()>::default().map_with(|_, item_type| {
@@ -106,7 +108,7 @@ pub fn gen_graph(dataset: &mut Dataset) {
   // TODO: fix this!!!
   let mut contribution_idxs = dataset.contribution_idxs().clone();
   contribution_idxs.as_mut().map_with(|idxs, item_type| {
-    for i in 0..dataset.len(item_type) {
+    for i in 0..dataset.lens()[item_type] {
       idxs[i].iter_mut().for_each(|v| *v = std::usize::MAX);
     }
   });
@@ -143,7 +145,7 @@ pub fn gen_graph(dataset: &mut Dataset) {
     dataset.contributions().len() - contributions.len()
   );
 
-  dataset.set_edges(
+  dataset_info.set_edges(
     contributions,
     contribution_idxs.map(|v| {
       v.iter()

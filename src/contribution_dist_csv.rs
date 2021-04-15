@@ -1,5 +1,6 @@
 use crate::{
-  dataset::{Contribution, Dataset},
+  dataset::{Contribution, DatasetWithInfo},
+  github_api,
   output_data::csv_writer,
   ItemType,
 };
@@ -9,26 +10,28 @@ use std::{collections::HashMap, path::Path};
 
 #[derive(Deserialize, Serialize)]
 struct ContributionCsvEntry {
-  num: u32,
+  num: usize,
   count: usize,
-  example_user: String,
-  example_repo: String,
+  example_user: github_api::ID,
+  example_repo: github_api::ID,
 }
 
 fn save_contribution_dist_impl<'a>(
   csv_path: &'a Path,
   contributions: impl IntoIterator<Item = &'a Contribution>,
-  dataset: &Dataset,
+  dataset_info: &DatasetWithInfo,
 ) -> Result<()> {
   let mut contrib_count = HashMap::new();
   for &Contribution { num, idx } in contributions {
     contrib_count
       .entry(num)
-      .or_insert((
-        0,
-        dataset.user_logins()[idx.user].clone(),
-        dataset.repo_names()[idx.repo].clone(),
-      ))
+      .or_insert_with(|| {
+        (
+          0,
+          dataset_info.user_github_id(idx.user),
+          dataset_info.repo_github_id(idx.repo),
+        )
+      })
       .0 += 1;
   }
 
@@ -51,22 +54,27 @@ fn save_contribution_dist_impl<'a>(
 
 pub fn save_contribution_dist(
   csv_path: &Path,
-  dataset: &Dataset,
+  dataset_info: &DatasetWithInfo,
 ) -> Result<()> {
-  save_contribution_dist_impl(csv_path, dataset.contributions(), dataset)
+  save_contribution_dist_impl(
+    csv_path,
+    dataset_info.dataset().contributions(),
+    dataset_info,
+  )
 }
 
 pub fn save_contribution_dist_item(
   csv_path: &Path,
   item_type: ItemType,
   idx: usize,
-  dataset: &Dataset,
+  dataset_info: &DatasetWithInfo,
 ) -> Result<()> {
+  let dataset = dataset_info.dataset();
   save_contribution_dist_impl(
     csv_path,
     dataset.contribution_idxs()[item_type][idx]
       .iter()
       .map(|&contrib_idx| &dataset.contributions()[contrib_idx]),
-    dataset,
+    dataset_info,
   )
 }

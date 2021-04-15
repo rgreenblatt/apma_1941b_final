@@ -86,7 +86,7 @@ pub fn projected_make_component_dists(start: usize) -> IdxDist {
 pub type Visited = UserRepoPair<Vec<bool>>;
 
 pub fn default_visited(dataset: &Dataset) -> Visited {
-  dataset.names().as_ref().map(|v| vec![false; v.len()])
+  dataset.lens().map(|l| vec![false; l])
 }
 
 pub fn traverse(
@@ -321,11 +321,10 @@ fn projected_traversal_step<T: ConnectionStrength>(
 }
 
 #[cfg(test)]
-pub mod test {
+pub(super) mod test {
   use super::*;
-  use crate::{dataset::ContributionInput, github_api, Repo, User};
+  use crate::dataset::Contribution;
   use proptest::prelude::*;
-  use std::iter;
 
   trait ComponentSort: ComponentAccess {
     fn sort_component(&mut self);
@@ -396,16 +395,8 @@ pub mod test {
     assert_eq!(component, expected_component);
   }
 
-  pub fn users(n: github_api::ID) -> impl Iterator<Item = (User, String)> {
-    (0..n).map(|github_id| (User { github_id }, "".to_owned()))
-  }
-
-  pub fn repos(n: github_api::ID) -> impl Iterator<Item = (Repo, String)> {
-    (0..n).map(|github_id| (Repo { github_id }, "".to_owned()))
-  }
-
   pub fn single_user_dataset() -> Dataset {
-    Dataset::new(users(1), iter::empty(), iter::empty(), true)
+    Dataset::new(UserRepoPair { user: 1, repo: 0 }, Vec::new())
   }
 
   #[test]
@@ -443,7 +434,7 @@ pub mod test {
   }
 
   pub fn single_repo_dataset() -> Dataset {
-    Dataset::new(iter::empty(), repos(1), iter::empty(), true)
+    Dataset::new(UserRepoPair { user: 0, repo: 1 }, Vec::new())
   }
 
   #[test]
@@ -478,35 +469,24 @@ pub mod test {
     }
   }
 
-  pub fn contrib_num(
-    user_github_id: github_api::ID,
-    repo_github_id: github_api::ID,
-    num: u32,
-  ) -> ContributionInput {
-    ContributionInput {
-      user: User {
-        github_id: user_github_id,
-      },
-      repo: Repo {
-        github_id: repo_github_id,
-      },
+  pub fn contrib_num(user: usize, repo: usize, num: usize) -> Contribution {
+    Contribution {
+      idx: UserRepoPair { user, repo },
       num,
     }
   }
 
-  pub fn contrib(
-    user_github_id: github_api::ID,
-    repo_github_id: github_api::ID,
-  ) -> ContributionInput {
-    contrib_num(user_github_id, repo_github_id, 1)
+  pub fn contrib(user: usize, repo: usize) -> Contribution {
+    contrib_num(user, repo, 1)
   }
 
-  pub fn small_disconnected_dataset(count: u32) -> Dataset {
+  pub fn small_disconnected_dataset(count: usize) -> Dataset {
     Dataset::new(
-      users(count),
-      repos(count),
-      (0..count).into_iter().map(|i| contrib(i, i)),
-      false,
+      UserRepoPair {
+        user: count,
+        repo: count,
+      },
+      (0..count).into_iter().map(|i| contrib(i, i)).collect(),
     )
   }
 
@@ -568,15 +548,17 @@ pub mod test {
     }
   }
 
-  pub fn fully_connected_dataset(count: u32) -> Dataset {
+  pub fn fully_connected_dataset(count: usize) -> Dataset {
     Dataset::new(
-      users(count),
-      repos(count),
+      UserRepoPair {
+        user: count,
+        repo: count,
+      },
       (0..count)
         .into_iter()
         .map(|i| contrib(i, i))
-        .chain((0..count - 1).into_iter().map(|i| contrib(i, i + 1))),
-      false,
+        .chain((0..count - 1).into_iter().map(|i| contrib(i, i + 1)))
+        .collect(),
     )
   }
 
@@ -664,7 +646,7 @@ pub mod test {
       contrib(7, 7),
       contrib(4, 7),
     ];
-    Dataset::new(users(8), repos(8), contributions, false)
+    Dataset::new(UserRepoPair { user: 8, repo: 8 }, contributions)
   }
 
   #[test]
@@ -728,7 +710,7 @@ pub mod test {
       contrib(7, 7),
       contrib(4, 7),
     ];
-    Dataset::new(users(9), repos(9), contributions, false)
+    Dataset::new(UserRepoPair { user: 9, repo: 9 }, contributions)
   }
 
   #[test]

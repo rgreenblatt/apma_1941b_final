@@ -4,7 +4,6 @@ use crate::{
   output_data::{csv_reader, csv_writer},
   progress_bar::get_bar,
   traversal::Component,
-  ItemType,
 };
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -24,14 +23,7 @@ pub fn save_component_sizes(
 ) -> Result<Option<Component>> {
   let mut counts = HashMap::new();
   let bar = get_bar(
-    Some(
-      dataset
-        .names()
-        .as_ref()
-        .into_iter()
-        .map(|v| v.len() as u64)
-        .sum(),
-    ),
+    Some(dataset.lens().into_iter().map(|l| l as u64).sum()),
     1000,
   );
 
@@ -64,8 +56,8 @@ pub fn save_component_sizes(
       count,
     })?;
   }
-  assert_eq!(total_user_size, dataset.len(ItemType::User));
-  assert_eq!(total_repo_size, dataset.len(ItemType::Repo));
+  assert_eq!(total_user_size, dataset.lens().user);
+  assert_eq!(total_repo_size, dataset.lens().repo);
 
   Ok(giant_component)
 }

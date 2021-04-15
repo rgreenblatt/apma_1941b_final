@@ -1,5 +1,3 @@
-#[cfg(test)]
-use crate::GithubIDWrapper;
 use crate::{
   csv_items::{
     get_csv_list_paths, ContributionCsvEntry, RepoNameCsvEntry, UserCsvEntry,
@@ -24,16 +22,20 @@ use unzip_n::unzip_n;
 #[derive(Clone, Copy, Debug)]
 pub struct Contribution {
   pub idx: UserRepoPair<usize>,
-  pub num: u32,
+  pub num: usize,
 }
 
 #[derive(Default, Debug)]
 pub struct Dataset {
+  contributions_v: Vec<Contribution>,
+  contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
+}
+
+pub struct DatasetWithInfo {
   users_v: Vec<User>,
   repos_v: Vec<Repo>,
   names_v: UserRepoPair<Vec<String>>,
-  contributions_v: Vec<Contribution>,
-  contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
+  dataset_v: Dataset,
 }
 
 unzip_n!(3);
@@ -44,10 +46,10 @@ type CollectedItems<T> = (Vec<T>, Vec<String>, Map<T, usize>);
 pub struct ContributionInput {
   pub user: User,
   pub repo: Repo,
-  pub num: u32,
+  pub num: usize,
 }
 
-impl Dataset {
+impl DatasetWithInfo {
   pub fn users(&self) -> &[User] {
     &self.users_v
   }
@@ -56,32 +58,24 @@ impl Dataset {
     &self.repos_v
   }
 
-  pub fn len(&self, item_type: ItemType) -> usize {
-    self.names()[item_type].len()
+  pub fn dataset(&self) -> &Dataset {
+    &self.dataset_v
   }
 
-  pub fn filter_contributions(&mut self, min_contribution: u32) {
-    if min_contribution == 0 {
-      return;
-    }
-    let mut contributions = UserRepoPair {
-      user: vec![Vec::new(); self.users().len()],
-      repo: vec![Vec::new(); self.repos().len()],
-    };
+  /// TODO: change/remove?
+  pub fn filter_contributions(&mut self, min_contribution: usize) {
+    self.dataset_v.filter_contributions(min_contribution)
+  }
 
-    self.contributions_v = self
-      .contributions_v
-      .iter()
-      .filter(|contrib| contrib.num >= min_contribution)
-      .enumerate()
-      .map(|(i, contrib)| {
-        for (item_type, idx) in contrib.idx.iter_with_types() {
-          contributions[item_type][idx].push(i)
-        }
-        *contrib
-      })
-      .collect();
-    self.contribution_idxs_v = contributions.map(|v| v.into_iter().collect());
+  // TODO: change/remove?
+  pub fn set_edges(
+    &mut self,
+    contributions_v: Vec<Contribution>,
+    contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
+  ) {
+    self
+      .dataset_v
+      .set_edges(contributions_v, contribution_idxs_v)
   }
 
   pub fn names(&self) -> &UserRepoPair<Vec<String>> {
@@ -96,20 +90,12 @@ impl Dataset {
     &self.names()[ItemType::Repo]
   }
 
-  pub fn contributions(&self) -> &[Contribution] {
-    &self.contributions_v
+  pub fn repo_github_id(&self, idx: usize) -> github_api::ID {
+    self.get_github_id(ItemType::Repo, idx)
   }
 
-  pub fn contribution_idxs(&self) -> &UserRepoPair<EdgeVec<usize>> {
-    &self.contribution_idxs_v
-  }
-
-  pub fn user_contributions(&self) -> &EdgeVec<usize> {
-    &self.contribution_idxs()[ItemType::User]
-  }
-
-  pub fn repo_contributions(&self) -> &EdgeVec<usize> {
-    &self.contribution_idxs()[ItemType::Repo]
+  pub fn user_github_id(&self, idx: usize) -> github_api::ID {
+    self.get_github_id(ItemType::User, idx)
   }
 
   pub fn get_github_id(
@@ -168,11 +154,6 @@ impl Dataset {
     let (users_v, user_logins_v, user_to_idx) = Self::collect_items(user_iter)?;
     let (repos_v, repo_names_v, repo_to_idx) = Self::collect_items(repo_iter)?;
 
-    let mut user_contributions = vec![Vec::new(); users_v.len()];
-    let mut repo_contributions = vec![Vec::new(); repos_v.len()];
-
-    let mut total = 0;
-
     let contributions_v = contributions_iter
       .into_iter()
       .filter_map(|v| match v {
@@ -187,11 +168,6 @@ impl Dataset {
               assert!(!all_contributions_must_be_used);
               return None;
             };
-
-          user_contributions[user_idx].push(total);
-          repo_contributions[repo_idx].push(total);
-
-          total += 1;
 
           let contribution = Contribution {
             idx: UserRepoPair {
@@ -209,46 +185,32 @@ impl Dataset {
     drop(user_to_idx);
     drop(repo_to_idx);
 
-    let contribution_idxs_v = UserRepoPair {
-      user: user_contributions.into_iter().collect(),
-      repo: repo_contributions.into_iter().collect(),
+    let names_v = UserRepoPair {
+      user: user_logins_v,
+      repo: repo_names_v,
     };
+
+    let lens = names_v.as_ref().map(|v| v.len());
 
     let out = Self {
       users_v,
       repos_v,
-      names_v: UserRepoPair {
-        user: user_logins_v,
-        repo: repo_names_v,
-      },
-      contributions_v,
-      contribution_idxs_v,
+      dataset_v: Dataset::new(lens, contributions_v),
+      names_v,
     };
 
     #[cfg(debug_assertions)]
     out
+      .dataset()
       .contribution_idxs_v
       .as_ref()
       .into_iter()
       .flat_map(|v| v.iter().flat_map(|v| v.iter()))
       .for_each(|&idx| {
-        debug_assert!(idx < out.contributions_v.len());
+        debug_assert!(idx < out.dataset().contributions_v.len());
       });
 
     Ok(out)
-  }
-
-  pub fn set_edges(
-    &mut self,
-    contributions_v: Vec<Contribution>,
-    contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
-  ) {
-    for (item_type, idxs) in contribution_idxs_v.as_ref().iter_with_types() {
-      assert_eq!(idxs.len(), self.len(item_type));
-    }
-
-    self.contributions_v = contributions_v;
-    self.contribution_idxs_v = contribution_idxs_v;
   }
 
   pub fn new(
@@ -383,13 +345,16 @@ impl Dataset {
     if let Some(thresh) = user_exclude_contributions_thresh {
       let out = out?;
       let excluded: Set<_> = out
+        .dataset()
         .user_contributions()
         .iter()
         .zip(out.users())
         .filter_map(|(contribs, &user)| {
           let total_contribs = contribs
             .iter()
-            .map(|&contrib_idx| out.contributions()[contrib_idx].num as usize)
+            .map(|&contrib_idx| {
+              out.dataset().contributions()[contrib_idx].num as usize
+            })
             .sum::<usize>();
 
           if total_contribs >= thresh {
@@ -417,45 +382,133 @@ impl Dataset {
   }
 }
 
+impl Dataset {
+  pub fn new(
+    lens: UserRepoPair<usize>,
+    contributions_v: Vec<Contribution>,
+  ) -> Self {
+    let mut contribution_idxs = lens.map(|l| vec![Vec::new(); l]);
+
+    for (i, contribution) in contributions_v.iter().enumerate() {
+      for (item_type, idx) in contribution.idx.iter_with_types() {
+        contribution_idxs[item_type][idx].push(i)
+      }
+    }
+
+    let contribution_idxs_v =
+      contribution_idxs.map(|v| v.into_iter().collect());
+
+    Self {
+      contribution_idxs_v,
+      contributions_v,
+    }
+  }
+
+  pub fn user_len(&self) -> usize {
+    self.lens().user
+  }
+
+  pub fn repo_len(&self) -> usize {
+    self.lens().repo
+  }
+
+  pub fn lens(&self) -> UserRepoPair<usize> {
+    self.contribution_idxs().as_ref().map(|v| v.len())
+  }
+
+  // TODO: change/remove?
+  pub fn filter_contributions(&mut self, min_contribution: usize) {
+    if min_contribution == 0 {
+      return;
+    }
+    let mut contributions = self.lens().map(|l| vec![Vec::new(); l]);
+
+    self.contributions_v = self
+      .contributions_v
+      .iter()
+      .filter(|contrib| contrib.num >= min_contribution)
+      .enumerate()
+      .map(|(i, contrib)| {
+        for (item_type, idx) in contrib.idx.iter_with_types() {
+          contributions[item_type][idx].push(i)
+        }
+        *contrib
+      })
+      .collect();
+    self.contribution_idxs_v = contributions.map(|v| v.into_iter().collect());
+  }
+
+  pub fn contributions(&self) -> &[Contribution] {
+    &self.contributions_v
+  }
+
+  pub fn contribution_idxs(&self) -> &UserRepoPair<EdgeVec<usize>> {
+    &self.contribution_idxs_v
+  }
+
+  pub fn user_contributions(&self) -> &EdgeVec<usize> {
+    &self.contribution_idxs().user
+  }
+
+  pub fn repo_contributions(&self) -> &EdgeVec<usize> {
+    &self.contribution_idxs().repo
+  }
+
+  pub fn set_edges(
+    &mut self,
+    contributions_v: Vec<Contribution>,
+    contribution_idxs_v: UserRepoPair<EdgeVec<usize>>,
+  ) {
+    for (item_type, idxs) in contribution_idxs_v.as_ref().iter_with_types() {
+      assert_eq!(idxs.len(), self.lens()[item_type]);
+    }
+
+    self.contributions_v = contributions_v;
+    self.contribution_idxs_v = contribution_idxs_v;
+  }
+}
+
 #[cfg(test)]
 fn strat_contributions(
-  user: impl Strategy<Value = User>,
-  repo: impl Strategy<Value = Repo>,
-  num: impl Strategy<Value = u32> + 'static + Clone,
+  user: impl Strategy<Value = usize>,
+  repo: impl Strategy<Value = usize>,
+  num: impl Strategy<Value = usize> + 'static + Clone,
   size: impl Into<proptest::collection::SizeRange>,
-) -> impl Strategy<Value = impl IntoIterator<Item = ContributionInput>> {
+) -> impl Strategy<Value = impl IntoIterator<Item = Contribution>> {
   proptest::collection::btree_set((user, repo), size).prop_flat_map(move |v| {
     proptest::collection::vec(num.clone(), v.len()).prop_map(move |nums| {
       v.clone()
         .into_iter()
         .zip(nums)
-        .map(|((user, repo), num)| ContributionInput { user, repo, num })
+        .map(|((user, repo), num)| Contribution {
+          idx: UserRepoPair { user, repo },
+          num,
+        })
     })
   })
 }
 
 #[cfg(test)]
 pub fn strategy(
-  num_users: impl Strategy<Value = github_api::ID>,
-  num_repos: impl Strategy<Value = github_api::ID>,
-  contribution_num: impl Strategy<Value = u32> + 'static + Clone,
+  num_users: impl Strategy<Value = usize>,
+  num_repos: impl Strategy<Value = usize>,
+  contribution_num: impl Strategy<Value = usize> + 'static + Clone,
   num_contribution: impl Into<proptest::collection::SizeRange> + Clone,
 ) -> impl Strategy<Value = Dataset> {
   (num_users, num_repos).prop_flat_map(move |(num_users, num_repos)| {
     strat_contributions(
-      (0..num_users).prop_map(GithubIDWrapper::from_github_id),
-      (0..num_repos).prop_map(GithubIDWrapper::from_github_id),
+      0..num_users,
+      0..num_repos,
       contribution_num.clone(),
       num_contribution.clone(),
     )
     .prop_map(move |contributions| {
       Dataset::new(
-        (0..num_users)
-          .map(|github_id| (User { github_id }, format!("user_{}", github_id))),
-        (0..num_repos)
-          .map(|github_id| (Repo { github_id }, format!("repo_{}", github_id))),
-        contributions,
-        true,
+        UserRepoPair {
+          user: num_users,
+          repo: num_repos,
+        },
+        contributions.into_iter().collect(),
       )
     })
   })

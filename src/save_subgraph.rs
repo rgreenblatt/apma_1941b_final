@@ -1,6 +1,6 @@
 use crate::{
   connection_strength::ConnectionStrength,
-  dataset::Dataset,
+  dataset::DatasetWithInfo,
   item_name_to_save_name,
   progress_bar::get_bar,
   projected_graph::ProjectedGraph,
@@ -17,9 +17,9 @@ pub fn save_subgraph<T: ConnectionStrength>(
   limit: usize,
   projected_graph: &ProjectedGraph<T>,
   item_type: ItemType,
-  dataset: &Dataset,
+  dataset_info: &DatasetWithInfo,
 ) -> Result<()> {
-  let mut visited = vec![false; dataset.len(item_type)];
+  let mut visited = vec![false; dataset_info.dataset().lens()[item_type]];
   visited[start] = true;
   let mut component = projected_make_component_dists(start);
 
@@ -33,7 +33,7 @@ pub fn save_subgraph<T: ConnectionStrength>(
     |_, _| bar.inc(1),
   );
 
-  let name = &dataset.names()[item_type][start];
+  let name = &dataset_info.names()[item_type][start];
   let save_name = format!("sub_graph_for_{}.dot", item_name_to_save_name(name));
 
   let path = output_dir.join(save_name);
@@ -53,7 +53,7 @@ pub fn save_subgraph<T: ConnectionStrength>(
     use_point: map.len() > 200,
     map,
     projected_graph,
-    names: &dataset.names()[item_type],
+    names: &dataset_info.names()[item_type],
   };
 
   dot::render(&graph, &mut writer)?;

@@ -1,4 +1,4 @@
-use crate::{dataset::Dataset, output_data::csv_writer, ItemType};
+use crate::{dataset::DatasetWithInfo, output_data::csv_writer, ItemType};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path};
@@ -13,11 +13,11 @@ pub struct DegreeCsvEntry {
 pub fn save_degrees(
   csv_path: &Path,
   item_type: ItemType,
-  dataset: &Dataset,
+  dataset: &DatasetWithInfo,
   get_degree: impl Fn(&[usize]) -> usize,
 ) -> Result<()> {
   let mut degree_count = HashMap::new();
-  for (v, name) in dataset.contribution_idxs()[item_type]
+  for (v, name) in dataset.dataset().contribution_idxs()[item_type]
     .iter()
     .zip(&dataset.names()[item_type])
   {

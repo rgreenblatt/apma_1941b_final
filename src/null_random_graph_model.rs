@@ -1,134 +1,92 @@
-use crate::{
-  dataset::{Contribution, Dataset},
-  edge_vec::EdgeVec,
-  ItemType, UserRepoPair,
+use crate::{dataset::Contribution, UserRepoPair};
+use rand::{
+  distributions::{Bernoulli, Uniform},
+  prelude::*,
 };
-use fnv::FnvHashMap as Map;
-use rand::prelude::*;
 
-#[derive(Debug, Clone, Copy)]
-struct DegreeItem {
-  i: usize,
-  j: usize,
-  num: u32,
-}
+pub fn gen_graph<R: RngCore>(
+  num_users: usize,
+  num_repos: usize,
+  alpha: f64,
+  beta: f64,
+  rng: &mut R,
+  mut num_edges_dist: impl FnMut(&mut R) -> usize,
+) {
+  let use_self_dist = Bernoulli::new(beta).unwrap();
+  let use_regardless_dist = Bernoulli::new(alpha).unwrap();
 
-fn partition_point<T, P>(slice: &[T], mut pred: P) -> usize
-where
-  P: FnMut(&T) -> bool,
-{
-  let mut left = 0;
-  let mut right = slice.len();
+  let repo_dist = Uniform::from(0..num_repos);
+  let mut repo_edges = vec![Vec::new(); num_repos];
+  let mut repo_contribution_totals = vec![num_repos; 0];
+  let mut contributions = Vec::<Contribution>::new();
 
-  while left != right {
-    let mid = left + (right - left) / 2;
-    let value = &slice[mid];
-    if pred(value) {
-      left = mid + 1;
-    } else {
-      right = mid;
-    }
-  }
+  let mut max_total_contributions = 0;
 
-  left
-}
+  let mut user_edges = vec![Vec::<usize>::new(); num_users];
 
-pub fn gen_graph(dataset: &Dataset) {
-  let alpha = 0.001;
-  let beta = 0.4;
-  // let 
+  for (user_idx, user_edges) in user_edges.iter_mut().enumerate() {
+    let start_contributions = contributions.len();
 
-  let mut counts = Map::default();
+    let num_edges = num_edges_dist(rng); // TODO:
 
-  let mut degrees: UserRepoPair<Vec<DegreeItem>> =
-    UserRepoPair::<()>::default().map_with(|_, item_type| {
-      dataset.contribution_idxs()[item_type]
-        .iter()
-        .enumerate()
-        .flat_map(|(i, idxs)| {
-          idxs
-            .iter()
-            .enumerate()
-            .map(|(j, &idx)| {
-              let num = dataset.contributions()[idx].num;
+    let mut max_user_contributions = 0;
 
-              *counts.entry(num).or_insert(0) += 1;
+    for _ in 0..num_edges {
+      let repo = if !user_edges.is_empty() && use_self_dist.sample(rng) {
+        loop {
+          let repo = Uniform::from(0..user_edges.len()).sample(rng);
 
-              DegreeItem { i, j, num }
-            })
-            .collect::<Vec<DegreeItem>>()
-        })
-        .collect()
-    });
+          // rejection sampling
+          let y = Uniform::from(0..=max_user_contributions).sample(rng);
 
-  let mut counts: Vec<_> = counts.into_iter().collect();
-  counts.sort();
-  let mut bins = Vec::new();
-  let min_per_bin = 1000;
+          if contributions[user_edges[repo]].num > y {
+            continue;
+          }
 
-  let &(last, _) = counts.last().expect("empty input not allowed");
+          break repo;
+        }
+      } else {
+        let use_regardless = use_regardless_dist.sample(rng);
+        loop {
+          let repo = repo_dist.sample(rng);
 
-  let mut tally = 0;
-  for (num, count) in counts {
-    tally += count;
-    if tally > min_per_bin {
-      bins.push(num);
-    }
-  }
+          if use_regardless {
+            break repo;
+          }
 
-  let &actual_last = bins.last().expect("empty input not allowed");
+          // rejection sampling
+          let y = Uniform::from(0..=max_total_contributions).sample(rng);
 
-  if actual_last != last {
-    bins.push(last);
-  }
+          if repo_contribution_totals[repo] > y {
+            continue;
+          }
 
-  let mut rng = rand::thread_rng();
+          break repo;
+        }
+      };
 
-  degrees.repo.shuffle(&mut rng);
+      repo_contribution_totals[repo] += 1;
 
-  let mut binned_degrees = vec![UserRepoPair::<Vec<_>>::default(); bins.len()];
+      max_total_contributions =
+        max_total_contributions.max(repo_contribution_totals[repo]);
 
-  for (item_type, v) in degrees.iter_with_types() {
-    for v in v {
-      let i = partition_point(&bins, |bin| bin < &v.num) + 1;
-      binned_degrees[i][item_type].push(v);
-    }
-  }
-
-  let mut contribution_idxs = dataset.contribution_idxs().clone();
-  contribution_idxs.as_mut().map_with(|idxs, item_type| {
-    for i in 0..dataset.len(item_type) {
-      idxs[i].iter_mut().for_each(|v| *v = std::usize::MAX);
-    }
-  });
-
-  let mut contributions = Vec::new();
-
-  for binned in binned_degrees {
-    for (repo, user) in binned.repo.iter().zip(binned.user.iter()) {
-      let i = contributions.len();
-      let num = (repo.num + user.num) / 2;
-      contribution_idxs.repo[repo.i][repo.j] = i;
-      contribution_idxs.user[user.i][user.j] = i;
-      contributions.push(Contribution {
-        num,
-        idx: UserRepoPair {
-          user: user.i,
-          repo: repo.i,
-        },
-      });
-    }
-  }
-
-  assert_eq!(contributions.len(), dataset.contributions().len());
-
-  for idxs in contribution_idxs.as_ref() {
-    for idxs in idxs.iter() {
-      for &v in idxs {
-        assert_ne!(v, std::usize::MAX);
+      for contrib in &mut contributions[start_contributions..] {
+        if contrib.idx.repo == repo {
+          contrib.num += 1;
+          max_user_contributions = max_user_contributions.max(contrib.num);
+        }
       }
+
+      user_edges.push(contributions.len());
+      repo_edges[repo].push(contributions.len());
+
+      contributions.push(Contribution {
+        num: 1,
+        idx: UserRepoPair {
+          user: user_idx,
+          repo,
+        },
+      })
     }
   }
-
-  dataset.set_edges(contributions, contribution_idxs);
 }

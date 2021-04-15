@@ -30,7 +30,7 @@ pub fn transitive_edge_compute(
   dataset: &Dataset,
   f: impl Fn(usize, Map<usize, Vec<[usize; 2]>>) + Send + Sync,
 ) {
-  let num_items = dataset.len(item_type);
+  let num_items = dataset.lens()[item_type];
 
   let bar = get_bar(Some(num_items as u64), 10_000);
 
@@ -41,7 +41,7 @@ pub fn transitive_edge_compute(
 
   // constructing a new map each time is faster because the average case
   // has a small number of edges (also, its better for threading)
-  (0..dataset.len(item_type))
+  (0..dataset.lens()[item_type])
     .into_par_iter()
     .progress_with(bar)
     .for_each(|start_idx| {
@@ -148,6 +148,6 @@ where
 
     transitive_edge_compute(item_type, dataset, f);
 
-    Self::from_edges(dataset.len(item_type), edges.into_inner().unwrap())
+    Self::from_edges(dataset.lens()[item_type], edges.into_inner().unwrap())
   }
 }
