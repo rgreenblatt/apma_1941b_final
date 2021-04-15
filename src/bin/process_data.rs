@@ -319,7 +319,7 @@ pub fn main() -> Result<()> {
   println!("connections: {}", dataset.contributions().len());
 
   let output_dir: PathBuf = if use_configuration_model {
-    configuration_model::gen_graph(&mut dataset_info);
+    configuration_model::gen_graph(dataset);
 
     "configuration_model_output_data/".into()
   } else {

@@ -1,5 +1,5 @@
 use crate::{
-  dataset::{Contribution, DatasetWithInfo},
+  dataset::{Contribution, Dataset},
   UserRepoPair,
 };
 use fnv::{FnvHashMap as Map, FnvHashSet as Set};
@@ -33,10 +33,9 @@ where
   left
 }
 
-/// TODO: fix this being with info etc...
-pub fn gen_graph(dataset_info: &mut DatasetWithInfo) {
+#[must_use]
+pub fn gen_graph(dataset: &Dataset) -> Dataset {
   let mut counts = Map::default();
-  let dataset = dataset_info.dataset();
 
   let mut degrees: UserRepoPair<Vec<DegreeItem>> =
     UserRepoPair::<()>::default().map_with(|_, item_type| {
@@ -105,14 +104,6 @@ pub fn gen_graph(dataset_info: &mut DatasetWithInfo) {
     }
   }
 
-  // TODO: fix this!!!
-  let mut contribution_idxs = dataset.contribution_idxs().clone();
-  contribution_idxs.as_mut().map_with(|idxs, item_type| {
-    for i in 0..dataset.lens()[item_type] {
-      idxs[i].iter_mut().for_each(|v| *v = std::usize::MAX);
-    }
-  });
-
   let mut contributions = Vec::new();
 
   let mut connected = Set::default();
@@ -124,11 +115,8 @@ pub fn gen_graph(dataset_info: &mut DatasetWithInfo) {
         continue;
       }
 
-      let i = contributions.len();
       let num = Uniform::from(repo.num.min(user.num)..=repo.num.max(user.num))
         .sample(&mut rng);
-      contribution_idxs.repo[repo.i][repo.j] = i;
-      contribution_idxs.user[user.i][user.j] = i;
       contributions.push(Contribution {
         num,
         idx: UserRepoPair {
@@ -145,12 +133,5 @@ pub fn gen_graph(dataset_info: &mut DatasetWithInfo) {
     dataset.contributions().len() - contributions.len()
   );
 
-  dataset_info.set_edges(
-    contributions,
-    contribution_idxs.map(|v| {
-      v.iter()
-        .map(|idxs| idxs.iter().cloned().filter(|&v| v != std::usize::MAX))
-        .collect()
-    }),
-  );
+  Dataset::new(dataset.lens(), contributions)
 }

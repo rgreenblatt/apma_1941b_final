@@ -1,4 +1,7 @@
-use crate::{dataset::Contribution, UserRepoPair};
+use crate::{
+  dataset::{Contribution, Dataset},
+  UserRepoPair,
+};
 use rand::{
   distributions::{Bernoulli, Uniform},
   prelude::*,
@@ -11,20 +14,18 @@ pub fn gen_graph<R: RngCore>(
   beta: f64,
   rng: &mut R,
   mut num_edges_dist: impl FnMut(&mut R) -> usize,
-) {
+) -> Dataset {
   let use_self_dist = Bernoulli::new(beta).unwrap();
   let use_regardless_dist = Bernoulli::new(alpha).unwrap();
 
   let repo_dist = Uniform::from(0..num_repos);
-  let mut repo_edges = vec![Vec::new(); num_repos];
   let mut repo_contribution_totals = vec![num_repos; 0];
   let mut contributions = Vec::<Contribution>::new();
 
   let mut max_total_contributions = 0;
 
-  let mut user_edges = vec![Vec::<usize>::new(); num_users];
-
-  for (user_idx, user_edges) in user_edges.iter_mut().enumerate() {
+  for user_idx in 0..num_users {
+    let mut user_edges = Vec::<usize>::new();
     let start_contributions = contributions.len();
 
     let num_edges = num_edges_dist(rng); // TODO:
@@ -78,7 +79,6 @@ pub fn gen_graph<R: RngCore>(
       }
 
       user_edges.push(contributions.len());
-      repo_edges[repo].push(contributions.len());
 
       contributions.push(Contribution {
         num: 1,
@@ -89,4 +89,12 @@ pub fn gen_graph<R: RngCore>(
       })
     }
   }
+
+  Dataset::new(
+    UserRepoPair {
+      user: num_users,
+      repo: num_repos,
+    },
+    contributions,
+  )
 }
