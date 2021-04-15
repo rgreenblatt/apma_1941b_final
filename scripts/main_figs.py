@@ -44,9 +44,11 @@ def projected(data_dir, fig_dir):
                 else:
                     _, bins = np.histogram(np.log10(degrees + 1),
                                            weights=counts)
-                    _, bins = np.histogram(np.log10(degrees + 1),
-                                           bins=bins.size * 2,
-                                           weights=counts)
+
+                    if dir_path != "NumCommonNode":
+                        _, bins = np.histogram(np.log10(degrees + 1),
+                                               bins=bins.size * 2,
+                                               weights=counts)
                     plt.hist(degrees,
                              weights=counts,
                              bins=10**bins,
