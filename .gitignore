@@ -153,19 +153,12 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
-*.json.gz
-target/
 figs/
-itdk0304_rlinks_directed
-itdk0304_rlinks_undirected
-out.txt
-inp.txt
 main_file.stderr
 main_file.sh
 main_file.exitCode
 *.mat
 *.pyi
-*.png
 
 ## Core latex/pdflatex auxiliary files:
 *.aux
