@@ -114,8 +114,7 @@ pub fn gen_graph<R: Rng + ?Sized>(dataset: &Dataset, rng: &mut R) -> Dataset {
         continue;
       }
 
-      let num = Uniform::from(repo.num.min(user.num)..=repo.num.max(user.num))
-        .sample(rng);
+      let num = [repo.num, user.num][Uniform::from(0..2).sample(rng)];
       contributions.push(Contribution {
         num,
         idx: UserRepoPair {

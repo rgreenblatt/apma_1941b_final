@@ -7,3 +7,4 @@ dot -Gdpi=300 -Tpng figs_dot/binary.dot -o figs_dot_out/binary.png
 dot -Gdpi=300 -Tpng figs_dot/count.dot -o figs_dot_out/count.png
 dot -Gdpi=300 -Tpng figs_dot/avg.dot -o figs_dot_out/avg.png
 dot -Gdpi=300 -Tpng figs_dot/geometric_mean.dot -o figs_dot_out/geometric_mean.png
+dot -Gdpi=300 -Tpng figs_dot/min.dot -o figs_dot_out/min.png

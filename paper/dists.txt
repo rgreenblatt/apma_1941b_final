@@ -1,0 +1,29 @@
+warning: unused variable: `total_repo_contribution`
+  --> src/null_random_graph_model.rs:24:7
+   |
+24 |   let mut total_repo_contribution = 0;
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_total_repo_contribution`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: variable does not need to be mutable
+  --> src/null_random_graph_model.rs:24:7
+   |
+24 |   let mut total_repo_contribution = 0;
+   |       ----^^^^^^^^^^^^^^^^^^^^^^^
+   |       |
+   |       help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` on by default
+
+warning: 2 warnings emitted
+
+    Finished release [optimized] target(s) in 0.05s
+     Running `/home/ryan/documents/apma_1941b_final/target/release/process_data --min-connection=0,2,4,6,10,15,20,30,50 -d -c --contribution --pseudo-diameter --average-distance-samples 100 --use-configuration-model`
+error: Found argument '--min-connection' which wasn't expected, or isn't valid in this context
+	Did you mean [32m--[0m[32mmin-contribution[0m?
+
+USAGE:
+    process_data --min-contribution <min-contribution>...
+
+For more information try --help

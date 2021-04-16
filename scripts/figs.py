@@ -10,40 +10,47 @@ FIG_DIR = 'figs/'
 OUTPUT_DATA_DIR = 'output_data/'
 
 
-def projected(data_dir, fig_dir):
+def projected(legend, data_dirs, fig_dir):
     try:
-        _, directories, _ = next(os.walk(data_dir))
+        _, directories, _ = next(os.walk(data_dirs[0]))
     except StopIteration:
         return
 
+    is_single = len(data_dirs) == 1
+
     for dir_path in directories:
         print(dir_path)
-        connec_str_data_dir = "{}/{}".format(data_dir, dir_path)
+        connec_str_data_dirs = [
+            "{}/{}".format(data_dir, dir_path) for data_dir in data_dirs
+        ]
         connec_str_fig_dir = "{}/{}".format(fig_dir, dir_path)
 
         os.makedirs(connec_str_fig_dir, exist_ok=True)
 
-        for name, title, header_name in [
-            ("degrees", "degrees", "degree"),
-            ("expected", "expected", "strength"),
-            ("strengths", "strengths", "strength"),
-            ("strengths_normalized", "strengths_normalized", "strength"),
+        for name, header_name in [
+            ("degrees", "degree"),
+            ("expected", "strength"),
+            ("strengths", "strength"),
+            ("strengths_normalized", "strength"),
         ]:
+            degrees_all = []
+            counts_all = []
             try:
-                df = pd.read_csv("{}/{}.csv".format(connec_str_data_dir, name),
-                                 sep=',')
+                for connec_str_data_dir in connec_str_data_dirs:
+                    df = pd.read_csv("{}/{}.csv".format(
+                        connec_str_data_dir, name),
+                                     sep=',')
+
+                    degrees_all.append(df[header_name])
+                    counts_all.append(df['count'])
             except FileNotFoundError:
                 continue
 
-            degrees = df[header_name]
-            counts = df['count']
-
             for use_y_log in [False, True]:
-                if header_name == 'degrees':
-                    plt.plot(degrees, counts)
-                else:
-                    if dir_path == "NumCommonNode":
-                        bins = [round(degrees.max()), counts.max()]
+                for degrees, counts in zip(degrees_all, counts_all):
+                    if name == 'degrees' or (dir_path == "NumCommonNodes"
+                                             and name == "strengths"):
+                        plt.plot(degrees, counts / counts.sum())
                     else:
                         _, bins = np.histogram(np.log10(degrees + 1),
                                                weights=counts)
@@ -53,8 +60,13 @@ def projected(data_dir, fig_dir):
                                                weights=counts)
                         bins = 10**bins
 
-                    plt.hist(degrees, weights=counts, bins=bins, density=True)
-                plt.title(title)
+                        plt.hist(degrees,
+                                 weights=counts,
+                                 bins=bins,
+                                 density=True,
+                                 alpha=1. if is_single else 0.5)
+                if not is_single:
+                    plt.legend(legend)
                 plt.xscale('log')
                 if use_y_log:
                     plt.yscale('log')
@@ -66,6 +78,11 @@ def projected(data_dir, fig_dir):
                 plt.savefig("{}/{}.png".format(connec_str_fig_dir,
                                                actual_name))
                 plt.clf()
+
+        if not is_single:
+            continue
+
+        connec_str_data_dir = connec_str_data_dirs[0]
 
         try:
             df = pd.read_csv("{}/{}.csv".format(connec_str_data_dir,
@@ -105,9 +122,9 @@ def projected(data_dir, fig_dir):
                    strength,
                    weights=counts,
                    bins=[10**x_bins, 10**y_bins],
-                   norm=matplotlib.colors.LogNorm())
+                   norm=matplotlib.colors.LogNorm(),
+                   density=True)
         plt.colorbar()
-        plt.title("strength vs expected (predicted)")
         plt.xscale('log')
         plt.yscale('log')
         plt.savefig("{}/{}.png".format(connec_str_fig_dir,
@@ -139,50 +156,65 @@ def contributions(data_dir, fig_dir):
         nums = df['num']
         counts = df['count']
 
-        plt.plot(nums, counts)
-        plt.title("contributions dist")
+        plt.plot(nums, counts / counts.sum())
         plt.xscale('log')
         plt.yscale('log')
         plt.savefig("{}/{}.png".format(fig_dir, os.path.splitext(csv_file)[0]))
         plt.clf()
 
 
-def make_figs(data_dir, fig_dir):
+def make_figs(legend, data_dirs, fig_dir):
     os.makedirs(fig_dir, exist_ok=True)
 
-    if os.path.basename(fig_dir) == "contributions":
-        contributions(data_dir, fig_dir)
+    is_single = len(data_dirs) == 1
+
+    if os.path.basename(fig_dir) == "contributions" and is_single:
+        contributions(data_dirs[0], fig_dir)
         return
 
     for projected_dir in ["projected_repo", "projected_user"]:
         print(projected_dir)
-        projected_data_dir = "{}/{}".format(data_dir, projected_dir)
+        projected_data_dirs = [
+            "{}/{}".format(data_dir, projected_dir) for data_dir in data_dirs
+        ]
         projected_fig_dir = "{}/{}".format(fig_dir, projected_dir)
-        projected(projected_data_dir, projected_fig_dir)
+        projected(legend, projected_data_dirs, projected_fig_dir)
 
-    for name, title in [
-        ("user_degrees", "user degrees"),
-        ("repo_degrees", "repo degrees"),
-        ("user_total_contributions", "user total contributions"),
-        ("repo_total_events", "repo total events"),
+    for name in [
+            "user_degrees",
+            "repo_degrees",
+            "user_total_contributions",
+            "repo_total_events",
     ]:
 
+        degrees_all = []
+        counts_all = []
         try:
-            df = pd.read_csv("{}/{}.csv".format(data_dir, name), sep=',')
+            for data_dir in data_dirs:
+                df = pd.read_csv("{}/{}.csv".format(data_dir, name), sep=',')
+
+                degrees_all.append(df['degree'])
+                counts_all.append(df['count'])
         except FileNotFoundError:
             continue
-        degrees = df['degree']
-        counts = df['count']
 
-        plt.plot(degrees, counts)
-        plt.title(title)
+        for degrees, counts in zip(degrees_all, counts_all):
+            plt.plot(degrees, counts / counts.sum())
+
+        if not is_single:
+            plt.legend(legend)
+        l = [counts.sum() for counts in counts_all]
+        assert l.count(l[0]) == len(l)
         plt.xscale('log')
         plt.yscale('log')
         plt.savefig("{}/{}.png".format(fig_dir, name))
         plt.clf()
 
+    if not is_single:
+        return
+
     try:
-        df = pd.read_csv("{}/{}.csv".format(data_dir, "component_sizes"),
+        df = pd.read_csv("{}/{}.csv".format(data_dirs[0], "component_sizes"),
                          sep=',')
     except FileNotFoundError:
         return
@@ -196,8 +228,9 @@ def make_figs(data_dir, fig_dir):
                repos,
                weights=counts,
                bins=[users.max(), repos.max()],
-               norm=matplotlib.colors.LogNorm())
-    plt.title("component sizes")
+               norm=matplotlib.colors.LogNorm(),
+               density=True)
+    plt.colorbar()
     plt.xlabel("users")
     plt.ylabel("repos")
     plt.savefig("{}/{}.png".format(fig_dir, "component_sizes"))
@@ -218,8 +251,25 @@ def main():
             data_dir = os.path.join(data_root, dir_path)
             fig_dir = os.path.join(fig_root, dir_path)
             print("for", data_dir)
-            make_figs(data_dir, fig_dir)
+            make_figs([None], [data_dir], fig_dir)
             print()
+
+    # TODO: fix this being hard coded???
+    to_compare_legend = ['actual', 'configuration']
+    compare_name = "actual_vs_configuration"
+    to_compare_dirs = ['actual_graph', 'configuration_model']
+
+    path = "{}/{}".format(args.data_dir, to_compare_dirs[0])
+
+    for sub in os.listdir(path):
+        data_dirs = [
+            "{}/{}/{}".format(args.data_dir, to_c, sub)
+            for to_c in to_compare_dirs
+        ]
+        fig_dir = "{}/{}/{}".format(args.fig_dir, compare_name, sub)
+
+        print("for", data_dirs)
+        make_figs(to_compare_legend, data_dirs, fig_dir)
 
 
 if __name__ == "__main__":
