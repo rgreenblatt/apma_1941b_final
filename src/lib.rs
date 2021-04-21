@@ -12,7 +12,6 @@ pub mod distances;
 mod edge_vec;
 pub mod github_api;
 mod github_types;
-pub mod null_random_graph_model;
 pub mod output_data;
 pub mod progress_bar;
 pub mod projected_graph;

@@ -10,7 +10,7 @@ use github_net::{
   dataset::{Dataset, DatasetInfo, DatasetNameID, Lens},
   degree_dist_csv::save_degrees,
   distances::{average_distance, compute_pseudo_diameter},
-  item_name_to_save_name, null_random_graph_model,
+  item_name_to_save_name,
   projected_graph::ProjectedGraph,
   save_subgraph::save_subgraph,
   traversal::Node,
@@ -40,10 +40,6 @@ struct Opt {
   /// Also run analysis on the configuration model with the same degrees.
   #[structopt(long)]
   use_configuration_model: bool,
-
-  /// Run analysis on a null random grpah model.
-  #[structopt(long)]
-  null_random_graph_model: bool,
 
   /// Eliminate users with very large contribution to remove (some) bots and
   /// spammers.
@@ -501,20 +497,6 @@ pub fn main() -> Result<()> {
         &output_dir.join("actual_graph"),
       )?;
     }
-  }
-  if opt.null_random_graph_model {
-    println!("=== running for null random graph model ===\n");
-
-    let mut rng = StdRng::seed_from_u64(2838348);
-    let mut dataset =
-      null_random_graph_model::gen_graph(10, 10, 0.001, 0.4, &mut rng, |_| 100);
-    let info = dataset.lens();
-    run(
-      &opt,
-      &mut dataset,
-      &info,
-      &output_dir.join("null_random_graph_model"),
-    )?;
   }
 
   Ok(())
