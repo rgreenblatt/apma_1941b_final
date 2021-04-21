@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib
+from scipy import stats
 
 FIG_DIR = 'figs/'
 OUTPUT_DATA_DIR = 'output_data/'
@@ -64,7 +65,8 @@ def projected(legend, data_dirs, fig_dir):
                                  weights=counts,
                                  bins=bins,
                                  density=True,
-                                 alpha=1. if is_single else 0.5)
+                                 histtype='step')
+
                 if not is_single:
                     plt.legend(legend)
                 plt.xscale('log')
@@ -255,7 +257,7 @@ def main():
             print()
 
     # TODO: fix this being hard coded???
-    to_compare_legend = ['actual', 'configuration']
+    to_compare_legend = ['actual', 'random']
     compare_name = "actual_vs_configuration"
     to_compare_dirs = ['actual_graph', 'configuration_model']
 

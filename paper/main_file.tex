@@ -33,18 +33,18 @@ per repo and used as an edge weight. In summary, interactions are modeled as a
 connect different types of nodes. We may also consider this as a bipartite
 graph. More complex network constructions which include repo dependencies or
 other types of edges are possible but weren't used for simplicity.  We
-construct and analyze this network using data from 2015 through 2020. Results
-are compared to that of a random network generated using the configuration
-model with the same edge weights and degrees.  We also develop various measures of node
+construct and analyze this network using data from 2015 through 2020. Statistics
+are compared to that of a random network generated using an approach
+similar to the configuration model.  We also develop various measures of node
 connection strength and use these to detect communities, analyze clustering,
 and generate visualizations.
 
-We find that the network has greater average distance and substantially higher
-diameter in the giant component than in the random case. The giant component is
-also smaller in the actual network. However, the actual network has much higher
-clustering than the random model. This could be explained by densely connected
-communities which are more sparsely connected with each other leading to high
-distance. 
+After discussing the dataset and graph structure, we will first examine various
+statistics of the network and compare these to the corresponding values for the
+random graph model. We will then develop a notion of connection strength useful
+for analyzing the connections of nodes with other nodes of the same type (which
+aren't directly connected by edges). Finally we derive a method for
+``normalizing'' connection strength in some sense.
 
 
 Source code for this project can be found  at
@@ -55,7 +55,7 @@ Source code for this project can be found  at
 \section*{Network Structure}
 
 Because of the rich dataset, a variety of different multi-dimensional network
-constructions are possible. Two node dimensions were used: one dimension for
+constructions are possible. Two node types were used: one dimension for
 users and another for repos. Contributions were modeled as integer weighted
 directed edges. While contributions are from users to repos, these edges can
 also be considered as undirected edges. This is often more convenient.
@@ -114,6 +114,11 @@ the ``queries'' directory.
 \section*{Degree distributions (and similar)}
 
 We start by examining the degree distributions in figure~\ref{fig:degrees}.
+The repo and user degrees both appear roughly linear on the log-log plot.  So,
+both seem to have power law tails.  We do see somewhat of a downward curve on
+the users degree distribution.  This makes sense because users can only make so
+many contributions which should have a damping effect.  The densities of both
+are near zero at about 1000 or 2000 connections.
 
 \begin{figure}[ht]
 \centering
@@ -130,20 +135,14 @@ We start by examining the degree distributions in figure~\ref{fig:degrees}.
 \caption{Degree distributions}\label{fig:degrees}
 \end{figure}
 
-The repo and user degrees both appear roughly linear on the log-log plot.
-So, both seem to have power law tails\footnote{It's not entirely clear to me
-how degree 0 and degree 1 repos made it into the dataset given the how the
-dataset was filtered.}.
-We do see somewhat of a downward curve on the users degree distribution.
-This makes sense because users can only make so many contributions which
-should have a damping effect.
-The densities of both are near zero at about 1000 or 2000 connections.
-
-
-
 We can also look at the distribution of total contributions
 (figure~\ref{fig:contributions}). The total contribution of a node is just the
 sum of the weights of its (incoming or outgoing) edges.
+Both of these distribution have a slight downward curve but are nearly linear
+in the tails.  So, again we see power law tails.
+We also see that repos typically have at least a few events. 
+This makes sense---having only one commit to a repo should be rare.
+
 
 \begin{figure}[ht]
 \centering
@@ -160,14 +159,16 @@ sum of the weights of its (incoming or outgoing) edges.
 \caption{Total contribution distributions}\label{fig:contributions}
 \end{figure}
 
-Both of these distribution have a slight downward curve but are nearly linear
-in the tails.  So, again we see power law tails.
-We also see that repos typically have at least a few events. 
-This makes sense---having only one commit to a repo should be rare.
-
 
 Finally, we can look at the distribution of individual contributions (edges weights)
 in figure~\ref{fig:edge weights}.
+Again this is slightly downward curving but with a linear (power law) tail.
+This can also be analyzed on a per user or per repo basis.
+See figures~\ref{fig:user edge weights} and \ref{fig:repo edge weights}.
+Once again, these look linear (power law) though due to the smaller number of samples,
+they are considerably noisier. It would be possible to rigorously examine
+the per user and per repo distribution to more accurately determine if they
+follow a power law distribution. However, that wasn't done here.
 
 \begin{figure}[ht]
 \centering
@@ -175,10 +176,7 @@ in figure~\ref{fig:edge weights}.
 \caption{Individual contributions (edge weights) distribution}\label{fig:edge weights}
 \end{figure}
 
-Again this is slightly downward curving but with a linear (power law) tail.
 
-This can also be analyzed on a per user or per repo basis.
-See figures~\ref{fig:user edge weights} and \ref{fig:repo edge weights}.
 
 
 \begin{figure*}[ht]
@@ -237,29 +235,39 @@ See figures~\ref{fig:user edge weights} and \ref{fig:repo edge weights}.
     \caption{Individual contributions (edge weights) distribution for selected repos}\label{fig:repo edge weights}
 \end{figure*}
 
-Again, these look linear (power law) though due to the smaller number of samples,
-they are considerably noisier. It would be possible to rigorously examine
-the per user and per repo distribution to more accurately determine if they
-follow a power law distribution. However, that wasn't done here.
 
-\section*{Configuration Model}
+\section*{Random graph model}
 
-In order to analyze which properties of the real network differ from a random network,
-we construct a random graph using the configuration model in which the users
-and repos have the same degrees and contribution numbers.
-Some of the contribution numbers may be quite rare. For instance, the
-user ``tresf'' made 9727 contributions to the repo ``LMMS/lmms'' and no other
-user made exactly 9727 contributions to any repo.
-So, this would force the user ``tresf'' to be connected to this repo in
-configuration model---no other repo exists which can match this edge.
-To mitigate this while keeping the same contribution counts, we
-bin contribution counts into bins of at least 1000 users and repos.
-Then, matching edges are chosen from this bin.
-When edges are paired with different contribution counts $x$ and $y$, the new edge
-count is chosen uniformly from $\set{x, y}$.
-Note that this has no effect on the smaller contributions counts.
-For instance, there 2307 contributions with a contribution count of 271,
-so the corresponding bin only has edges with a count of 271.
+In order to analyze which properties of the real network differ from a random
+network, we use a random graph model very similar to the configuration model.
+Specifically, we produce a random graph based on the actual
+graph in which users and repos have the same
+number of edges and each of these edges has nearly the same contribution number
+(edge weight). We can't directly use the exact same contribution numbers
+because some of them are quite rare. For instance, the user ``tresf'' made 9727
+contributions to the repo ``LMMS/lmms'' and no other user made exactly 9727
+contributions to any repo.  So, this would force the user ``tresf'' to be
+connected to this repo in this random graph model---no other repo exists which
+can match this edge.  To mitigate this while keeping the same contribution
+counts, we bin contribution counts into bins of at least 1000 users and repos.
+The bins for small contribution counts contain only one value because these
+small counts are quite common and bins start and end on integer edge values.
+
+The overall algorithm for constructing a random graph proceeds as follows:
+\begin{enumerate}
+  \item Using the number of occurrences of each contribution count, bins of size
+      at least 1000 are constructed. 
+  \item Each edge endpoint is placed into the corresponding bin based on the
+      contribution number. Note that each edge has a user endpoint and a repo
+      endpoint.
+  \item For each bin, we randomly select pairs of a user endpoint and a repo
+      endpoint.  These endpoints form an edge in the new graph.  The
+      contribution count of the new edge is selected uniformly from the two
+      endpoint; the endpoints may have different contribution counts due to
+      binning.  Selection is repeated until the bin contains no more endpoints
+      at which point we proceed to the next bin.
+  \item Duplicate edges are removed.
+\end{enumerate}
 
 \section*{Components and distance}
 
@@ -270,7 +278,7 @@ Its worthwhile to note that removing users (typically bots) with extremely high
 contributions reduces this size substantially; with these users included,
 the size is closer to 93\%.
 This differs substantially from
-the configuration model which has a giant component with 95\% of the vertices.
+the random network which has a giant component with 95\% of the vertices.
 This difference might be due to small local clusters. For instance, maybe a
 group of users will all contribute to each other's repos, but don't contribute
 more broadly. 
@@ -290,14 +298,14 @@ This may be due to the local clustering idea described above.
 \begin{subfigure}{.5\textwidth}
   \centering
   \includegraphics[width=0.9\linewidth]{../figs/configuration_model/min_contribution_0/component_sizes.png}
-    \caption{Configuration model}
+    \caption{Random network}
 \end{subfigure}%
 \caption{Component size distribution (excluding giant component)}\label{fig:components hist}
 \end{figure}
 
 Within the giant component, the average distance between nodes is $7.34 \pm 0.36$
 using a confidence interval of 2 times the standard error.
-This is somewhat higher than in the configuration model which has an average
+This is somewhat higher than in the random network which has an average
 distance of $5.73 \pm 0.14$. This average distance is approximated by averaging
 over the average distances of 100 randomly selected nodes. This approximation
 is needed for computational efficiency.
@@ -308,7 +316,7 @@ elsewhere.} of the giant component by starting from a random node, finding the
 most distant node and then repeating the process from that node until the
 maximum distance converges. This forms a lower bound of the diameter which
 should quite close or exact. The pseudo-diameter of the actual network was
-found to be 71 while the pseudo diameter of the configuration model was found
+found to be 71 while the pseudo diameter of the random network was found
 as 23 (convergence to these values seems to occur consistently).  This is a
 huge difference in the real world network from the expected value.  This may
 indicate the presence of communities which are barely connected to each other
@@ -426,8 +434,7 @@ given the meaning of edge weights for this network.
 
 To improve computation speed, edges
 with weight less than 10 were filtered out of the graph
-when computing edge strengths\footnote{I may run this
-with no filtering later---it should only take several hours}. This may not be
+when computing edge strengths. This may not be
 a good approach to sparsification but it is quite simple to implement.
 
 Distributions of edge strengths using the number of
@@ -435,7 +442,7 @@ common neighbors, the min, and the geometric mean can be found in
 figure~\ref{fig:strength distribution}.  
 We can see that
 the actual distribution of common neighbors is shifted to the right
-substantially when compared to the configuration model. Note that this
+substantially when compared to the random network. Note that this
 difference is exaggerated by the log-log plot. This indicates that we see far
 common neighbors than we would expect if all repos and users were treated
 identically. In other words, this indicates some level of clustering.  We also
@@ -509,8 +516,8 @@ Note that the number of nodes in these figures vary greatly despite using
 the same thresholds. That's (in part) because the degree distributions
 of the starting repos and their surrounding repos vary.
 We could produce more consistent figures simply by adjusting the threshold per
-repo, but this approach has a number of disadvantages. Specially,
-it requires manual tunning and can't be used effectively when low degree
+repo, but this approach has a number of disadvantages. Specifically,
+it requires manual tuning and can't be used effectively when low degree
 clusters connect to high degree clusters. Instead, we will
 consider a more general approach to normalizing these strength measures.
 
@@ -569,32 +576,53 @@ A measure of clustering between 2 nodes can be used for community detection and
 measuring overall clustering in the graph.   We will obtain this measure by
 ``normalizing'' a connection strength measure in some sense. We aim to do this
 (roughly speaking) by dividing by the expected strength measure under
-the configuration model, conditioning on the
-degrees and weights of the neighborhoods of two nodes.
+the configuration model\footnote{After presenting you asked me what random graph model I was considering and I said preferential attachment (instead of the configuration model). However, thinking about this in terms of the configuration model makes more sense (the formulation is equivalent).} when conditioning on variety of random variables.
 
-Consider nodes $u$ and $v$ of same type (for instance repos).
-These nodes have neighborhoods $N(u)$ and $N(v)$.
+Consider distinct nodes $u$ and $v$ of same type (for instance repos).  These
+nodes have neighborhoods $N(u)$ and $N(v)$.  We will consider the configuration
+model in which edge endpoints are paired uniformly at random.  For the purposes
+of this derivation, the effect of edge weights on these pairings is irrelevant
+and will be ignored.  We condition the configuration model on the following
+values:
+\begin{itemize}
+    \item The degrees of $u$ and $v$: $\abs{N(u)}$ and $\abs{N(v)}$.
+    \item The degrees of the neighbors of $u$: $\abs{N(i)}$ for all $i \in
+        N(u)$. 
+    \item The weights of the edges of $u$: $E(\set{u, i})$ for all 
+        $i \in N(u)$ where $E$ is the function from edges to their weights.
+    \item The weights of the edges of the neighbors of $u$: $E(\set{w, i})$ for all 
+        $w \in N(i)$ for all $i \in N(u)$.
+\end{itemize}
+So, in this derivation, the distribution
+under consideration is that of the configuration model, but with
+those values fixed (conditioned out). This must be kept in mind
+when considering expectations and probabilities.
+
+
 We will first consider the special case when the strength metric is
 the total number of common edges: $\abs{N(u) \cap N(v)}$.
 Let $Y_i$ be the indicator random variable that node $i \in N(u)$
 connects to node $v$. 
-We will consider the configuration model\footnote{After presenting you asked me what random graph model I was considering and I said preferential attachment (instead of the configuration model). However, thinking about this in terms of the configuration model makes more sense (the formulation is equivalent).}, 
-fixing the values of $\abs{N(u)}$, $\abs{N(v)}$ and $\abs{N(i)}$ for all $i \in N(u)$.
-By linearity of expectation, 
+By linearity of expectation and the fact that $\abs{N(u)}$ is fixed,
 \[\Exp[\abs{N(u) \cap N(v)}] = \sum_{i\in N(u)} \Exp[Y_i]\]
-Let $n$ be the total degree of the graph.
+
+Let $n$ be the sum of the degrees of nodes with the same type as $u$ and $v$.
+Note that because the network is a two mode network, this is the same
+as the total number of edges in the graph.
 Then each of the edges of node $i$
 has an approximately $p_v \triangleq \abs{N(v)} / n$ probability of
-connecting to $v$. 
+connecting to $v$. Note that $p_v$ is a fixed value because
+we condition on the value of $\abs{N(v)}$.
 We know that $i$ connects to $u$ which removes one of its edges from contention.
-So the probability that $i$ connects to $v$ given the value of $\abs{N(v)}$
+The probability that $i$ connects to $v$ 
 is just $\approx 1 - \p{1 - p_v}^{\abs{N(i)} - 1}$.
+Recall that $\abs{N(i)}$ is fixed, so this is a valid probability.
 So we get that
 \[\Exp\br{\abs{N(u) \cap N(v)}} 
 \approx  \sum_{i\in N(u)} \p{1 - \p{1 - p_v}^{\abs{N(i)} - 1}}\]
-We only consider the expectation when 2 nodes are connected in the
+We will only measure this expectation when 2 nodes are connected in the
 projection---this is when there is at least one common
-node, that is $\abs{N(u) \cap N(v)} \geq 1$. So, we actually need the expectation
+node, so $\abs{N(u) \cap N(v)} \geq 1$. Thus, we actually need the expectation
 conditioned on $\abs{N(u) \cap N(v)} \geq 1$.
 \begin{align*}
     \Exp[Y_i \;\big|\; \abs{N(u) \cap N(v)} \geq 1]
@@ -608,20 +636,21 @@ conditioned on $\abs{N(u) \cap N(v)} \geq 1$.
 
 Now we extend this to arbitrary weight functions.
 Given that node $i$ connects to $v$,
-each of its edges has equal probability of being the connecting edge
+each of its edges has equal probability of being the sole connecting edge
 under the configuration model.
-So if we fix the edge weights of $i$ and the edges weights of $v$,
-then (recalling the definition of $s_f$ from above)
+Now recall that we fix the weights of the edges of $u$ and the weights
+of the edges of $i$ for all $i \in N(u)$.
+So using the definition of $s_f$ from above:
 \begin{align*}
     \Exp[s_f(u, v)]
     &\approx\sum_{i\in N(u)} \p{1 - \p{1 - p_v}^{\abs{N(i)} - 1}} 
-    \frac{1}{\abs{N(i)} - 1}\sum_{w \in N(i) \;|\; w \neq u} f(E(\set{v, i}), E(\set{w, i})) \\
+    \frac{1}{\abs{N(i)} - 1}\sum_{w \in N(i) \;|\; w \neq u} f(E(\set{u, i}), E(\set{w, i})) \\
 \end{align*}
-Again we must condition this on $\abs{N(u) \cap N(v)} \geq 1$;
-we can just divide by the same denominator.
+Again we must condition this on $\abs{N(u) \cap N(v)} \geq 1$.
+We can just divide by the same denominator.
 So the overall approximation is
 \[ \frac{\sum_{i\in N(u)} \p{1 - \p{1 - p_v}^{\abs{N(i)} - 1}} 
-    \frac{1}{\abs{N(i)} - 1}\sum_{w \in N(i) \;|\; w \neq u} f(E(\set{v, i}), E(\set{w, i}))}
+    \frac{1}{\abs{N(i)} - 1}\sum_{w \in N(i) \;|\; w \neq u} f(E(\set{u, i}), E(\set{w, i}))}
 { \p{1 - \p{1 - p_v}^{ \sum_{i\in N(u)} \p{\abs{N(i)} - 1}}}} \]
 Note that this approximation is asymmetric, it doesn't condition
 on the degrees of the neighbors of $v$ or the edge weights of these neighbors.
@@ -632,12 +661,13 @@ and compute a single expectation from that. However, this is considerably
 harder to compute and requires reasoning about weighted edges in the
 configuration model.
 
-Instead of thinking about this approach as approximating the configuration
-model, we can also consider this as approximating any other random
-graph model in which edges are independently selected.
-Then, we using the empirical values as an estimate for the actual values.
-For instance, $p_v$ is the empirical probability and
-\[\frac{1}{\abs{N(i)} - 1} \sum_{w \in N(i) \;|\; w \neq u} f(E(\set{v, i}), E(\set{w, i}))\]
+An alternative approach for thinking about this approximation is to consider
+this as approximating any other random graph model in which edges are
+independently selected.  In that case, this is equivalent to using the
+empirical values as an estimate for the actual values.  For instance, $p_v$ is
+the empirical probability and
+\[\frac{1}{\abs{N(i)} - 1} \sum_{w \in N(i) \;|\; w \neq u} 
+f(E(\set{u, i}), E(\set{w, i}))\]
 is the empirical expectation (mean).
 
 This approximation can be computed reasonably efficiently by pre-computing
@@ -721,8 +751,15 @@ We can also see this in the distribution plots.
 With these normalized measures of strength, we can now consider thresholded
 projection graphs which are based on clustering and should be partially scale
 invariant. For instance, see figures~\ref{fig:numpy geo norm},~\ref{fig:rust geo norm},
-and~\ref{fig:neovim geo norm}. 
-
+and~\ref{fig:neovim geo norm}.  
+We can see that the number of repos reached remains more constant for each of these
+starting points (numpy, rust, and neovim)
+than when using unnormalized measures of connection
+strength (as in figures~\ref{fig:numpy geo},~\ref{fig:rust geo},
+and~\ref{fig:neovim geo}). When we do see large clusters,
+that seems to be due to actual graph structure. For instance,~\ref{fig:numpy geo norm}
+contains a cluster around the pandas (middle left) which seems to consist
+of repos related directly to pandas based on the names.
 
 \begin{figure}[ht]
 \centering
@@ -746,6 +783,34 @@ normalized geometric mean edge strength thresholded to be above
     the geometric mean edge strength thresholded to be above 70}\label{fig:neovim geo norm}
 \end{figure}
 
+Interestingly, this measure of clustering results in forks which are only used
+for pull requests being strongly clustered which may or may not be desirable.
+Specifically, a common pattern on GitHub is to fork a repo to your account,
+make commits to the fork, and then pull request the repo using the fork.
+Typically, the forked repo will only be committed to by the owner and possibly
+a few other users. We can see that this pattern can result in high clustering
+as it shows up in these sampled subgraphs. For instance, consider the
+charris/numpy repo which is connected to the numpy/numpy repo. This repo is
+where the user charris commits when making a pull request to the actual numpy
+repo. So, the connection strength between these repos will depend on how much
+charris contributes to numpy. They are a major contributor, so this connection
+strength is reasonably large (it is around 9538 when using the geometric mean).
+However, the connection strength using the neighbors of charris/numpy will
+mostly depend on the typical edge strength of charris (only a few other users
+are even weakly connected to this repo). This value will be much lower as
+charris contributes much less to other repos.  The expected connection strength
+using the neighbors of numpy/numpy will depend on the typical edge strength of
+all of its contributors.  So this will also be much lower than the actual
+connection strength from charris/numpy.  Thus, both of these expectations will
+greatly underestimate the true connection strength resulting in high
+clustering.
+
+Normalized connection strength seems to be a decent measure of clustering.
+This metric allows for distinguishing between real networks with considerable
+clustering and random networks. It also seems to reflect actual
+underlying clustering based on looking at the projected subgraphs
+which threshold edges by normalized connection strength.
+
 
 \section*{Conclusion}
 
@@ -759,7 +824,10 @@ a variety of ways. This could be explained by densely connected communities
 which are more sparsely connected with each other leading to high distances. 
 
 We also investigate approaches for measuring edge strength and create
-a measure of normalized edge strength with a variety of uses.
+a measure of normalized edge strength.
+We find that this measure of normalized edge strength is a useful measure
+of clustering and can also be used to produce meaningful figures showing
+how repos are connected.
 
 \printbibliography{}
 
