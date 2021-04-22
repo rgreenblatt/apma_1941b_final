@@ -1,7 +1,14 @@
-use crate::{dataset::Dataset, edge_vec::EdgeVec, ItemType, UserRepoPair};
+use crate::{
+  dataset::{Dataset, Lens},
+  edge_vec::EdgeVec,
+  progress_bar::get_bar,
+  ItemType, UserRepoPair,
+};
 use fnv::FnvHashMap as Map;
+use indicatif::ParallelProgressIterator;
 use itertools::Itertools;
 use ordered_float::NotNan;
+use rayon::prelude::*;
 use std::{fmt, hash::Hash, iter, marker::PhantomData, ops, str::FromStr};
 
 pub trait ConnectionStrengthValue:
@@ -96,10 +103,14 @@ pub struct ExpectationAccelerator<'a, T: ConnectionStrength> {
 impl<'a, T: ConnectionStrength> ExpectationAccelerator<'a, T> {
   #[must_use]
   pub fn new(item_type: ItemType, dataset: &'a Dataset) -> Self {
-    let (cached_items, overall_counts) = dataset.contribution_idxs()[item_type]
-      .iter()
-      .enumerate()
-      .map(|(idx, contribs)| {
+    let num_items = dataset.lens()[item_type];
+    let bar = get_bar(Some(num_items as u64), 10000);
+    let (cached_items, overall_counts): (Vec<Vec<_>>, _) = (0..num_items)
+      .into_par_iter()
+      .progress_with(bar)
+      .map(|idx| {
+        let contribs = &dataset.contribution_idxs()[item_type][idx];
+
         let mut overall_count = 0;
         let mut totals = Map::default();
         for &contrib_idx in contribs {
@@ -149,12 +160,12 @@ impl<'a, T: ConnectionStrength> ExpectationAccelerator<'a, T> {
             total_operation / len_other_than_us as f64;
         }
 
-        (totals, overall_count)
+        (totals.into_iter().collect(), overall_count)
       })
       .unzip();
 
     Self {
-      cached_items,
+      cached_items: cached_items.into_iter().collect(),
       overall_counts,
       item_type,
       dataset,

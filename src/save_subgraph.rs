@@ -34,12 +34,6 @@ pub fn save_subgraph<T: ConnectionStrength>(
   );
 
   let name = dataset_info.get_name(item_type, start);
-  let save_name =
-    format!("sub_graph_for_{}.dot", item_name_to_save_name(&name));
-
-  let path = output_dir.join(save_name);
-  let file = File::create(path)?;
-  let mut writer = BufWriter::new(file);
 
   let map: Map<_, _> = component
     .idxs()
@@ -50,15 +44,30 @@ pub fn save_subgraph<T: ConnectionStrength>(
 
   println!("saving {} with {} items", name, map.len(),);
 
-  let graph = Graph {
-    use_point: map.len() > 200,
-    map,
-    projected_graph,
-    item_type,
-    dataset_info,
-  };
+  let mut use_point_vals = vec![true];
+  if map.len() < 10_000 {
+    use_point_vals.push(false);
+  }
 
-  dot::render(&graph, &mut writer)?;
+  for use_point in use_point_vals {
+    let graph = Graph {
+      use_point,
+      map: &map,
+      projected_graph,
+      item_type,
+      dataset_info,
+    };
+
+    let end = if use_point { "" } else { "_with_names" };
+
+    let save_name =
+      format!("sub_graph_for_{}{}.dot", item_name_to_save_name(&name), end);
+    let path = output_dir.join(save_name);
+    let file = File::create(path)?;
+    let mut writer = BufWriter::new(file);
+
+    dot::render(&graph, &mut writer)?;
+  }
 
   Ok(())
 }
@@ -67,7 +76,7 @@ type Node = usize;
 type Edge = [usize; 2];
 
 struct Graph<'a, T: ConnectionStrength, D: DatasetNameID> {
-  map: Map<usize, usize>,
+  map: &'a Map<usize, usize>,
   projected_graph: &'a ProjectedGraph<T>,
   item_type: ItemType,
   dataset_info: &'a D,

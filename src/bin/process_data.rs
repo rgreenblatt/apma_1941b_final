@@ -83,8 +83,8 @@ struct Opt {
   #[structopt(long, use_delimiter = true)]
   subgraph_repo: Vec<String>,
 
-  #[structopt(long, default_value = "3")]
-  subgraph_limit: usize,
+  #[structopt(long, use_delimiter = true, default_value = "3")]
+  subgraph_limits: Vec<usize>,
 
   /// How strong the connection must be to keep a edge in the user projected
   /// graph.
@@ -106,7 +106,7 @@ struct Opt {
   connection_str_stats: bool,
 
   #[structopt(long, default_value = "0", use_delimiter = true)]
-  min_contribution: Vec<usize>,
+  min_contributions: Vec<usize>,
 }
 
 fn run_degrees(
@@ -156,7 +156,7 @@ struct RunConnectionStrArgs<'a, D: DatasetNameID> {
   output_dir: &'a Path,
   min_connection_str: &'a mut UserRepoPair<Vec<f64>>,
   subgraph_names: UserRepoPair<&'a Vec<String>>,
-  subgraph_limit: usize,
+  subgraph_limits: &'a [usize],
   dataset: &'a Dataset,
   dataset_info: &'a D,
   connection_str_stats: bool,
@@ -198,7 +198,7 @@ fn run_connection_str<
     output_dir,
     min_connection_str,
     subgraph_names,
-    subgraph_limit,
+    subgraph_limits,
     dataset,
     dataset_info,
     connection_str_stats,
@@ -265,19 +265,26 @@ fn run_connection_str<
 
       fs::create_dir_all(&output_dir)?;
 
-      for name in subgraph_names[item_type] {
-        let idx = dataset_info.find_item(item_type, name).unwrap();
+      for &subgraph_limit in subgraph_limits {
+        let output_dir =
+          output_dir.join(format!("subgraph_limit_{}", subgraph_limit));
 
-        println!("saving subgraph for {:?} {}", item_type, name);
+        fs::create_dir_all(&output_dir)?;
 
-        save_subgraph(
-          &output_dir,
-          idx,
-          subgraph_limit,
-          &projected_graph,
-          item_type,
-          dataset_info,
-        )?;
+        for name in subgraph_names[item_type] {
+          let idx = dataset_info.find_item(item_type, name).unwrap();
+
+          println!("saving subgraph for {:?} {}", item_type, name);
+
+          save_subgraph(
+            &output_dir,
+            idx,
+            subgraph_limit,
+            &projected_graph,
+            item_type,
+            dataset_info,
+          )?;
+        }
       }
     }
   }
@@ -301,12 +308,12 @@ fn run(
     average_distance_samples,
     subgraph_user,
     subgraph_repo,
-    subgraph_limit,
+    subgraph_limits,
     user_min_connection_str,
     repo_min_connection_str,
     connection_str_types,
     connection_str_stats,
-    min_contribution,
+    min_contributions,
     ..
   } = opts;
 
@@ -356,7 +363,7 @@ fn run(
     }
   }
 
-  let mut min_contribution = min_contribution.clone();
+  let mut min_contribution = min_contributions.clone();
   min_contribution.sort_unstable();
 
   for min_contribution in min_contribution {
@@ -433,7 +440,7 @@ fn run(
       let args = RunConnectionStrArgs {
         output_dir: &output_dir,
         min_connection_str,
-        subgraph_limit: *subgraph_limit,
+        subgraph_limits,
         subgraph_names,
         connection_str_stats: *connection_str_stats,
         dataset,

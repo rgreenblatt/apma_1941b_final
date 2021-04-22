@@ -133,8 +133,11 @@ where
     let edges = Mutex::new(Vec::new());
 
     let f = |start_idx, mut edge_map: Map<_, Vec<[usize; 2]>>| {
-      edges.lock().unwrap().extend(edge_map.drain().filter_map(
-        |(end_idx, contrib_idxs)| {
+      // pulling this out improves speed greatly by avoiding holding the lock
+      // for the entire time
+      let mut new_edges: Vec<_> = edge_map
+        .drain()
+        .filter_map(|(end_idx, contrib_idxs)| {
           let strength =
             connection_strength.strength(item_type, &contrib_idxs, dataset);
           if strength >= *min_strength {
@@ -146,8 +149,10 @@ where
           } else {
             None
           }
-        },
-      ))
+        })
+        .collect();
+
+      edges.lock().unwrap().append(&mut new_edges)
     };
 
     transitive_edge_compute(item_type, dataset, f);
